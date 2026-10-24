@@ -115,7 +115,7 @@ def _wind_rose(c: Canvas, cx: float, cy: float, r: float, m: Metar, color, ends:
     calm = not m.wind_speed and not m.wind_gust
     choice = runways.best(ends, None if m.wind_variable else m.wind_dir, m.wind_speed, m.wind_gust)
     theme.compass(c, cx, cy, r, letters=("N",))
-    length = 2 * r - 6
+    length = 2 * r - 2
     drawn = set()
     for e in ends:
         pair = frozenset((e.name, e.opposite))
@@ -124,7 +124,9 @@ def _wind_rose(c: Canvas, cx: float, cy: float, r: float, m: Metar, color, ends:
         drawn.add(pair)
         theme.runway(c, cx, cy, length * 0.92, e.heading, width=8)
     if choice:
-        theme.marked_runway(c, cx, cy, length, choice.end.heading, choice.end.name, choice.end.opposite)
+        # US runway markings drop a leading zero ("9"); ICAO ones keep it ("09").
+        faa = m.station[:1] in ("K", "P")
+        theme.marked_runway(c, cx, cy, length, choice.end.heading, choice.end.name, choice.end.opposite, faa=faa)
     if not (m.wind_variable or calm) and m.wind_dir is not None:
         theme.arrow(c, cx, cy, r, m.wind_dir, color=color)
 

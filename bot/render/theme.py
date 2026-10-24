@@ -262,48 +262,63 @@ def runway(c: Canvas, cx: float, cy: float, length: float, heading: float, *, wi
 
 
 def marked_runway(
-    c: Canvas, cx: float, cy: float, length: float, heading: float, name: str, opposite: str, *, glyph_height=11.0
+    c: Canvas,
+    cx: float,
+    cy: float,
+    length: float,
+    heading: float,
+    name: str,
+    opposite: str,
+    *,
+    faa: bool = True,
+    glyph_height: float = 10.0,
 ) -> None:
     """A runway with threshold bars, its designators and a dashed centreline.
 
     `name` is the end pointing along `heading`. You land on it from the far
     end (u = -length/2), so that's where its bars and number are painted,
     upright for a pilot on final, with the L/C/R nearest the threshold, as on
-    the real marking. The opposite end mirrors it. The runway is only as
-    wide as its numbers need.
+    the real marking. The opposite end mirrors it. The characters are the
+    FAA's own (see runway_font), and the runway is only as wide as they need.
+    `faa` drops a leading zero, as US markings do; ICAO markings keep it.
     """
     from . import runway_font
 
     at = _runway_frame(cx, cy, heading)
     half = length / 2
-    k = glyph_height / 3  # canvas units per glyph unit
-    digits = max(len(name.rstrip("LCR")), len(opposite.rstrip("LCR")))
-    width = runway_font.width("8" * digits) * k + 4.0
+    k = glyph_height / runway_font.HEIGHT  # canvas units per foot
+    ends = [(name, at), (opposite, lambda u, v: at(-u, -v))]
+    rows = {label: runway_font.designator(label, faa=faa) for label, _ in ends}
+    widest = max(runway_font.row_width(r) for digits, letter in rows.values() for r in (digits, letter))
+    width = widest * k + 4.0
     c.polygon(_quad(at, -half, half, -width / 2, width / 2), fill=ASPHALT)
 
-    inset, stripe_len, gap = 1.8, 5.0, 2.5
+    inset, stripe_len, gap, row_gap = 1.5, 4.5, 1.5, 1.5
     stripe_w = 1.15
     stripe_vs = [v for o in (width * 0.16, width * 0.36) for v in (o, -o)]
-    for label, frame in ((name, at), (opposite, lambda u, v: at(-u, -v))):
+    painted = 0.0  # how far in from the threshold the markings reach
+    for label, frame in ends:
         for v in stripe_vs:
             c.polygon(_quad(frame, -half + inset, -half + inset + stripe_len, v - stripe_w / 2, v + stripe_w / 2),
                       fill=PAINT)
-        digits_text = label.rstrip("LCR")
-        letter = label[len(digits_text):]
+        digits, letter = rows[label]
         row_top = -half + inset + stripe_len + gap + glyph_height
-        rows = ([letter] if letter else []) + [digits_text]
-        for row in rows:
+        for row in [r for r in (letter, digits) if r]:
             top = row_top
 
             def place(x: float, y: float, top=top, frame=frame) -> tuple[float, float]:
                 return frame(top - y, x)
 
-            runway_font.draw(lambda pts, w: c.line(pts, fill=PAINT, width=w), row, place, k)
-            row_top += 2.0 + glyph_height
+            runway_font.draw(
+                lambda pts, hole: c.polygon(pts, fill=ASPHALT if hole else PAINT), row, place, k
+            )
+            row_top += row_gap + glyph_height
+        painted = max(painted, row_top - row_gap + half)
 
-    end_u = half - (inset + stripe_len + gap + 2 * (glyph_height + 2.0) + 2.5)
-    u, dash, dash_gap = -end_u, 5.0, 4.0
-    while u + dash <= end_u:
+    # The centreline runs from just past one end's number to just short of the other's.
+    end_u = half - painted - 1.2
+    u, dash, dash_gap = -end_u, 4.5, 3.0
+    while u + dash <= end_u + 0.01:
         c.polygon(_quad(at, u, u + dash, -0.55, 0.55), fill=PAINT)
         u += dash + dash_gap
 

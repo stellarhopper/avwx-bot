@@ -67,8 +67,21 @@ def test_every_card_renders(tmp_path):
 def test_runway_font_covers_every_designator_character():
     from bot.render import runway_font
 
-    assert set("0123456789LCR") <= set(runway_font.GLYPHS)
-    for ch, strokes in runway_font.GLYPHS.items():
-        for stroke in strokes:
-            assert len(stroke) >= 2
-            assert all(-0.01 <= x <= 1.01 and -0.01 <= y <= 3.01 for x, y in stroke), ch
+    assert set("0123456789LCR") | {"1_single"} <= set(runway_font.GLYPHS)
+    for name, rings in runway_font.GLYPHS.items():
+        assert rings and all(len(ring) >= 4 for ring in rings), name
+        for ring in rings:
+            # Feet, from the AC figure: 60 tall, and none wider than the "4".
+            assert all(-0.1 <= x <= 26 and -0.1 <= y <= 60.1 for x, y in ring), name
+
+
+def test_runway_designator_rules():
+    from bot.render import runway_font as f
+
+    assert f.designator("09L", faa=True) == ("9", "L")  # FAA: no leading zero
+    assert f.designator("09L", faa=False) == ("09", "L")  # ICAO keeps it
+    assert f.glyph_names("1") == ["1_single"]  # a lone 1 gets its base bar
+    assert f.glyph_names("17") == ["1", "7"]
+    # Numerals sit 15 ft apart; "11" is spaced 27 ft left edge to left edge.
+    assert abs(f.row_width("34") - (f._width("3") + 15 + f._width("4"))) < 1e-9
+    assert abs(f.row_width("11") - (27 + f._width("1"))) < 1e-9
