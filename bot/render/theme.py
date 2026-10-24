@@ -125,20 +125,6 @@ class Canvas:
     def text(self, x, y, value: str, *, style="regular", size=14, fill=TEXT, anchor="la") -> None:
         self.draw.text(tuple(self._s(x, y)), value, font=font(style, size, self.scale), fill=fill, anchor=anchor)
 
-    def rotated_text(self, x, y, value: str, degrees: float, *, style="bold", size=10, fill=TEXT, spacing=0.0) -> None:
-        """Text centred on (x, y), turned `degrees` clockwise. Multi-line is stacked and centred."""
-        f = font(style, size, self.scale)
-        probe = ImageDraw.Draw(Image.new("L", (1, 1)))
-        box = probe.multiline_textbbox((0, 0), value, font=f, align="center", spacing=round(spacing * self.scale))
-        w, h = math.ceil(box[2] - box[0]) + 4, math.ceil(box[3] - box[1]) + 4
-        mask = Image.new("L", (w, h), 0)
-        ImageDraw.Draw(mask).multiline_text(
-            (2 - box[0], 2 - box[1]), value, font=f, fill=255, align="center", spacing=round(spacing * self.scale)
-        )
-        mask = mask.rotate(-degrees, resample=Image.BICUBIC, expand=True)
-        cx, cy = self._s(x, y)
-        self.image.paste(Image.new("RGB", mask.size, fill), (cx - mask.width // 2, cy - mask.height // 2), mask)
-
     def text_width(self, value: str, *, style="regular", size=14) -> float:
         # Always measured at the drawing scale, so word wrapping comes out the
         # same on a cheap measuring canvas as on the real one (see compose()).
@@ -276,35 +262,50 @@ def runway(c: Canvas, cx: float, cy: float, length: float, heading: float, *, wi
 
 
 def marked_runway(
-    c: Canvas, cx: float, cy: float, length: float, heading: float, name: str, opposite: str, *, width=26
+    c: Canvas, cx: float, cy: float, length: float, heading: float, name: str, opposite: str, *, glyph_height=11.0
 ) -> None:
-    """A runway with threshold bars, painted numbers and a dashed centreline.
+    """A runway with threshold bars, its designators and a dashed centreline.
 
-    `name` is the end pointing along `heading`: you land on it from the far
+    `name` is the end pointing along `heading`. You land on it from the far
     end (u = -length/2), so that's where its bars and number are painted,
-    turned to read upright for a pilot on final. The opposite end mirrors it.
+    upright for a pilot on final, with the L/C/R nearest the threshold, as on
+    the real marking. The opposite end mirrors it. The runway is only as
+    wide as its numbers need.
     """
+    from . import runway_font
+
     at = _runway_frame(cx, cy, heading)
     half = length / 2
+    k = glyph_height / 3  # canvas units per glyph unit
+    digits = max(len(name.rstrip("LCR")), len(opposite.rstrip("LCR")))
+    width = runway_font.width("8" * digits) * k + 4.0
     c.polygon(_quad(at, -half, half, -width / 2, width / 2), fill=ASPHALT)
-    stripe_len, inset = 7.0, 2.0
-    stripe_vs = [v for k in (2.6, 5.4, 8.2, 11.0) for v in (k, -k)]
-    for sign in (-1, 1):  # -1: `name`'s threshold, +1: `opposite`'s
-        u_edge = sign * (half - inset)
-        u_inner = sign * (half - inset - stripe_len)
+
+    inset, stripe_len, gap = 1.8, 5.0, 2.5
+    stripe_w = 1.15
+    stripe_vs = [v for o in (width * 0.16, width * 0.36) for v in (o, -o)]
+    for label, frame in ((name, at), (opposite, lambda u, v: at(-u, -v))):
         for v in stripe_vs:
-            c.polygon(_quad(at, u_edge, u_inner, v - 0.8, v + 0.8), fill=PAINT)
-    number_offset = half - inset - stripe_len - 12
-    for sign, label, facing in ((-1, name, heading), (1, opposite, heading + 180)):
-        digits = label.rstrip("LCR")
-        letter = label[len(digits):]
-        text = f"{digits}\n{letter}" if letter else digits
-        x, y = at(sign * number_offset, 0)
-        c.rotated_text(x, y, text, facing % 360, style="bold", size=9, fill=PAINT, spacing=0.5)
-    u, dash, gap = -(number_offset - 13), 5.0, 4.0
-    while u + dash <= number_offset - 13:
-        c.polygon(_quad(at, u, u + dash, -0.6, 0.6), fill=PAINT)
-        u += dash + gap
+            c.polygon(_quad(frame, -half + inset, -half + inset + stripe_len, v - stripe_w / 2, v + stripe_w / 2),
+                      fill=PAINT)
+        digits_text = label.rstrip("LCR")
+        letter = label[len(digits_text):]
+        row_top = -half + inset + stripe_len + gap + glyph_height
+        rows = ([letter] if letter else []) + [digits_text]
+        for row in rows:
+            top = row_top
+
+            def place(x: float, y: float, top=top, frame=frame) -> tuple[float, float]:
+                return frame(top - y, x)
+
+            runway_font.draw(lambda pts, w: c.line(pts, fill=PAINT, width=w), row, place, k)
+            row_top += 2.0 + glyph_height
+
+    end_u = half - (inset + stripe_len + gap + 2 * (glyph_height + 2.0) + 2.5)
+    u, dash, dash_gap = -end_u, 5.0, 4.0
+    while u + dash <= end_u:
+        c.polygon(_quad(at, u, u + dash, -0.55, 0.55), fill=PAINT)
+        u += dash + dash_gap
 
 
 def stack(images: list[bytes], *, gap: float = 10) -> bytes:

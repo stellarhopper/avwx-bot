@@ -122,7 +122,7 @@ def _wind_rose(c: Canvas, cx: float, cy: float, r: float, m: Metar, color, ends:
         if pair in drawn or (choice and pair == frozenset((choice.end.name, choice.end.opposite))):
             continue
         drawn.add(pair)
-        theme.runway(c, cx, cy, length * 0.92, e.heading, width=12)
+        theme.runway(c, cx, cy, length * 0.92, e.heading, width=8)
     if choice:
         theme.marked_runway(c, cx, cy, length, choice.end.heading, choice.end.name, choice.end.opposite)
     if not (m.wind_variable or calm) and m.wind_dir is not None:

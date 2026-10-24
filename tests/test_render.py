@@ -62,3 +62,13 @@ def test_every_card_renders(tmp_path):
         img = Image.open(path)
         assert img.width >= 1000 and img.height >= 200
         assert len(img.convert("L").resize((40, 40)).getcolors(1600)) > 5  # not a blank fill
+
+
+def test_runway_font_covers_every_designator_character():
+    from bot.render import runway_font
+
+    assert set("0123456789LCR") <= set(runway_font.GLYPHS)
+    for ch, strokes in runway_font.GLYPHS.items():
+        for stroke in strokes:
+            assert len(stroke) >= 2
+            assert all(-0.01 <= x <= 1.01 and -0.01 <= y <= 3.01 for x, y in stroke), ch
