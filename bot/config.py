@@ -53,14 +53,31 @@ def _optional_int(name: str) -> int | None:
         raise SystemExit(f"{name} must be a number, got {raw!r}") from None
 
 
+def database_path() -> Path:
+    """DB_PATH if set; else systemd's state directory; else data/ in the checkout.
+
+    The middle case matters on the Pi. systemd sets STATE_DIRECTORY itself from
+    the unit's StateDirectory=, and nothing in .env can blank it. DB_PATH can be
+    blanked: a .env copied from .env.example carries an empty `DB_PATH=`, and
+    systemd lets the env file override the unit, which would quietly move the
+    database into the checkout that every deployment resets.
+    """
+    raw = os.environ.get("DB_PATH", "").strip()
+    if raw:
+        return Path(raw)
+    state = os.environ.get("STATE_DIRECTORY", "").split(":")[0].strip()
+    if state:
+        return Path(state) / "avwx.db"
+    return ROOT / "data" / "avwx.db"
+
+
 class Config:
     """Snapshot of the environment, read once at startup."""
 
     def __init__(self) -> None:
         self.token = os.environ.get("DISCORD_TOKEN", "").strip()
         self.dev_guild_id = _optional_int("DEV_GUILD_ID")
-        raw_db = os.environ.get("DB_PATH", "").strip()
-        self.db_path = Path(raw_db) if raw_db else ROOT / "data" / "avwx.db"
+        self.db_path = database_path()
         self.site_url = os.environ.get("CONFIG_SITE_URL", "").strip() or DEFAULT_SITE_URL
         self.user_agent = (
             os.environ.get("HTTP_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
