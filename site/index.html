@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>avwx-bot configurator</title>
+  <meta name="description" content="Configure avwx-bot for your Discord server. Runs entirely in your browser.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>avwx-bot <span>configurator</span></h1>
+      <p id="server-line" class="muted">No server loaded.</p>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <section id="intro" class="card">
+      <h2>How this works</h2>
+      <ol>
+        <li>In Discord, run <code>/avwx config edit</code>. The bot replies with a link that opens this page with your server's current settings and channel list.</li>
+        <li>Change what you like below.</li>
+        <li>Press <strong>Download config.json</strong>, then run <code>/avwx config import</code> in Discord and attach the file. The bot shows what will change and waits for you to press <strong>Apply</strong>.</li>
+      </ol>
+      <p class="muted">Everything happens in your browser. Your server's details travel in the part of the link after <code>#</code>, which browsers never send to the web server.</p>
+      <div class="row">
+        <label class="button secondary">Open file…<input id="open-file" type="file" accept=".json,application/json" hidden></label>
+        <button id="start-blank" class="secondary" type="button">Start from defaults</button>
+      </div>
+      <p id="load-error" class="error" hidden></p>
+    </section>
+
+    <form id="form" hidden></form>
+
+    <section id="output" class="card" hidden>
+      <h2>Your config</h2>
+      <ul id="errors" class="error-list"></ul>
+      <div class="row">
+        <button id="download" type="button">Download config.json</button>
+        <button id="copy" class="secondary" type="button">Copy JSON</button>
+        <span id="copy-status" class="muted"></span>
+      </div>
+      <p class="muted">Then in Discord: <code>/avwx config import</code> and attach the file.</p>
+      <details>
+        <summary>Show JSON</summary>
+        <pre id="json"></pre>
+      </details>
+    </section>
+  </main>
+
+  <footer class="wrap muted">
+    <a href="https://github.com/stellarhopper/avwx-bot">avwx-bot on GitHub</a> ·
+    Weather data from aviationweather.gov and the National Weather Service. Not an official briefing source.
+  </footer>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

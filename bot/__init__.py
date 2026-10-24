@@ -1,0 +1,1 @@
+"""Aviation weather for Discord."""

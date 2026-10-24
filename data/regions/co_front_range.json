@@ -1,0 +1,34 @@
+{
+  "id": "co_front_range",
+  "name": "Colorado Front Range & Rockies",
+  "states": ["CO"],
+  "nws_offices": ["BOU", "PUB", "GJT"],
+  "cwsu": "ZDV",
+  "winds_aloft_sites": ["DEN", "GJT", "PUB", "ALS"],
+  "ridge": {
+    "comment": "The Front Range and the Divide run roughly north-south, so westerly flow crosses them at right angles. Wind from within this sector at ridge level is what builds mountain wave and rotor on the lee (east) side.",
+    "cross_from_deg": 240,
+    "cross_to_deg": 320,
+    "levels_ft": [12000, 18000]
+  },
+  "mountain_airports": ["KLXV", "KCCU", "KASE", "KEGE", "KGUC", "KALS", "KGNB", "KSBS", "KTEX", "KAEJ", "KANK"],
+  "weathercams_url": "https://weathercams.faa.gov/map/-109.2,36.8,-102.0,41.1",
+  "passes": [
+    {"id": "rollins", "name": "Rollins Pass", "elevation_ft": 11671, "lat": 39.934, "lon": -105.682, "on_pass": ["KC99"], "east": ["KBJC"], "west": ["KGNB"], "winds": "DEN"},
+    {"id": "berthoud", "name": "Berthoud Pass", "elevation_ft": 11307, "lat": 39.798, "lon": -105.777, "on_pass": ["K0CO"], "east": ["KBJC"], "west": ["KGNB"], "winds": "DEN"},
+    {"id": "loveland", "name": "Loveland Pass (I-70)", "elevation_ft": 11990, "lat": 39.664, "lon": -105.879, "on_pass": ["K0CO"], "east": ["KBJC"], "west": ["KCCU"], "winds": "DEN"},
+    {"id": "kenosha", "name": "Kenosha Pass", "elevation_ft": 10001, "lat": 39.413, "lon": -105.759, "on_pass": ["K4BM"], "east": ["KAPA"], "west": ["KLXV"], "winds": "DEN"},
+    {"id": "hoosier", "name": "Hoosier Pass", "elevation_ft": 11542, "lat": 39.362, "lon": -106.062, "on_pass": ["KCCU"], "east": ["K4BM"], "west": ["KLXV"], "winds": "DEN"},
+    {"id": "fremont", "name": "Fremont Pass", "elevation_ft": 11318, "lat": 39.367, "lon": -106.188, "on_pass": ["KCCU"], "east": ["KLXV"], "west": ["KEGE"], "winds": "DEN"},
+    {"id": "vail", "name": "Vail Pass", "elevation_ft": 10662, "lat": 39.531, "lon": -106.217, "on_pass": ["KCCU"], "east": ["KBJC"], "west": ["KEGE"], "winds": "DEN"},
+    {"id": "tennessee", "name": "Tennessee Pass", "elevation_ft": 10424, "lat": 39.362, "lon": -106.311, "on_pass": ["KLXV"], "east": ["KLXV"], "west": ["KEGE"], "winds": "GJT"},
+    {"id": "wilkerson", "name": "Wilkerson Pass", "elevation_ft": 9502, "lat": 39.039, "lon": -105.525, "on_pass": ["K4BM"], "east": ["KCOS"], "west": ["KAEJ"], "winds": "PUB"},
+    {"id": "trout_creek", "name": "Trout Creek Pass", "elevation_ft": 9346, "lat": 38.912, "lon": -105.985, "on_pass": ["K7BM"], "east": ["K4BM"], "west": ["KAEJ"], "winds": "PUB"},
+    {"id": "monarch", "name": "Monarch Pass", "elevation_ft": 11312, "lat": 38.497, "lon": -106.325, "on_pass": ["KMYP"], "east": ["KANK"], "west": ["KGUC"], "winds": "PUB"},
+    {"id": "la_veta", "name": "La Veta Pass", "elevation_ft": 9413, "lat": 37.614, "lon": -105.200, "on_pass": ["KVTP"], "east": ["K4V1"], "west": ["KALS"], "winds": "ALS"},
+    {"id": "wolf_creek", "name": "Wolf Creek Pass", "elevation_ft": 10857, "lat": 37.483, "lon": -106.802, "on_pass": ["KCPW"], "east": ["KRCV"], "west": ["KPSO"], "winds": "ALS"},
+    {"id": "rabbit_ears", "name": "Rabbit Ears Pass", "elevation_ft": 9426, "lat": 40.384, "lon": -106.611, "on_pass": ["KC07"], "east": ["K20V"], "west": ["KSBS"], "winds": "DEN"},
+    {"id": "cameron", "name": "Cameron Pass", "elevation_ft": 10276, "lat": 40.521, "lon": -105.893, "on_pass": [], "east": ["KFNL"], "west": ["K33V"], "winds": "DEN"},
+    {"id": "raton", "name": "Raton Pass", "elevation_ft": 7834, "lat": 36.991, "lon": -104.484, "on_pass": [], "east": ["KTAD"], "west": ["KRTN"], "winds": "PUB"}
+  ]
+}

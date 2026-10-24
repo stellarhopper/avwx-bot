@@ -1,0 +1,34 @@
+[build-system]
+# >=77 for PEP 639 license metadata (the SPDX `license` string below).
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avwx-bot"
+version = "0.1.0"
+description = "Aviation weather briefings, alerts and mountain-flying dashboards for Discord"
+license = "MIT"
+license-files = ["LICENSE"]
+requires-python = ">=3.11"
+# aiohttp comes with discord.py. jsonschema checks imported server configs
+# against schema/config.schema.json, the same file the configurator site uses.
+dependencies = ["discord.py>=2.4", "pillow>=10", "jsonschema>=4"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+filterwarnings = [
+    # discord.py 2.7 on Python 3.14. Upstream's to fix, and it fires on every
+    # command registration, which drowns out warnings that are ours.
+    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning",
+    # Also discord.py 2.7 on 3.14, from escape_markdown's own re.sub call.
+    "ignore:'count' is passed as positional argument:DeprecationWarning",
+]
+
+[tool.setuptools]
+packages = ["bot", "bot.sources", "bot.wx", "bot.render", "bot.cogs"]
+
+[tool.setuptools.package-data]
+bot = ["fonts/*.ttf", "fonts/*.txt"]

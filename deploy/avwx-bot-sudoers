@@ -1,0 +1,12 @@
+# Installed to /etc/sudoers.d/avwx-bot (chmod 440) by setup-pi.sh.
+#
+# The deployment listener needs to restart the bot and to install the two
+# systemd units from the checkout when a commit changes them. These commands
+# are the entire privilege grant — exact paths, no wildcards, so it cannot be
+# talked into restarting some other unit or installing some other file.
+stellarhopper ALL=(ALL) NOPASSWD: /usr/bin/systemctl restart avwx-bot
+stellarhopper ALL=(ALL) NOPASSWD: /usr/bin/systemctl status avwx-bot
+stellarhopper ALL=(ALL) NOPASSWD: /usr/bin/systemctl is-active avwx-bot
+stellarhopper ALL=(ALL) NOPASSWD: /usr/bin/systemctl daemon-reload
+stellarhopper ALL=(ALL) NOPASSWD: /usr/bin/install -m 644 -o root -g root /home/stellarhopper/avwx-bot/deploy/avwx-bot.service /etc/systemd/system/avwx-bot.service
+stellarhopper ALL=(ALL) NOPASSWD: /usr/bin/install -m 644 -o root -g root /home/stellarhopper/avwx-bot/deploy/avwx-bot-deployer.service /etc/systemd/system/avwx-bot-deployer.service

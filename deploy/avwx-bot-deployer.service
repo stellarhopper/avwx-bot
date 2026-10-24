@@ -1,0 +1,30 @@
+[Unit]
+Description=avwx-bot - MQTT deployment listener
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stellarhopper
+WorkingDirectory=/home/stellarhopper/avwx-bot/deploy
+ExecStart=/usr/bin/python3 /home/stellarhopper/avwx-bot/deploy/mqtt_subscriber.py
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/avwx-bot/deployer.log
+StandardError=append:/var/log/avwx-bot/deployer.log
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+# Broker host, username, password and topic all live in .env.mqtt (chmod 600,
+# never committed) rather than being baked into this unit — the unit is in git
+# and a broker URL plus username is most of a credential.
+EnvironmentFile=/home/stellarhopper/avwx-bot/deploy/.env.mqtt
+
+# Security
+# NoNewPrivileges is deliberately NOT set: deployment shells out to sudo for
+# the commands in avwx-bot-sudoers (restarting the bot and syncing these unit
+# files), and nothing else.
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

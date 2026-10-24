@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://stellarhopper.github.io/avwx-bot/config.schema.json",
+  "title": "avwx-bot server configuration",
+  "description": "One Discord server's settings. Produced by the configurator site, applied with /avwx config import. Discord IDs are strings because they don't fit in a JavaScript number.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version"],
+  "$defs": {
+    "snowflake": {"type": "string", "pattern": "^[0-9]{15,21}$"},
+    "station": {
+      "type": "string",
+      "pattern": "^[A-Z0-9]{3,4}$",
+      "description": "ICAO identifier, e.g. KBJC. Uppercase."
+    },
+    "stations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/station"},
+      "uniqueItems": true,
+      "maxItems": 12
+    },
+    "hhmm": {"type": "string", "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"},
+    "weekday": {"enum": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]}
+  },
+  "properties": {
+    "schema_version": {"const": 1},
+    "_guild": {
+      "description": "Hints the bot adds for the configurator: channel and role names. Ignored on import.",
+      "type": "object"
+    },
+    "timezone": {
+      "type": "string",
+      "default": "America/Denver",
+      "description": "IANA zone name. Brief times and quiet hours are in this zone."
+    },
+    "units": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "altimeter": {"enum": ["inHg", "hPa"], "default": "inHg"},
+        "temperature": {"enum": ["C", "F"], "default": "C"}
+      }
+    },
+    "home_airports": {
+      "$ref": "#/$defs/stations",
+      "description": "The server's local airports. The default for commands run without arguments."
+    },
+    "admin_role_ids": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/snowflake"},
+      "uniqueItems": true,
+      "description": "Roles allowed to change this configuration, besides anyone with Manage Server."
+    },
+    "commands": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Which user commands are available in this server.",
+      "properties": {
+        "metar": {"type": "boolean", "default": true},
+        "taf": {"type": "boolean", "default": true},
+        "brief": {"type": "boolean", "default": true},
+        "winds": {"type": "boolean", "default": true},
+        "pirep": {"type": "boolean", "default": true},
+        "mountain": {"type": "boolean", "default": true},
+        "alerts": {"type": "boolean", "default": true}
+      }
+    },
+    "brief": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "The automatic morning brief.",
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "channel_id": {"$ref": "#/$defs/snowflake"},
+        "forum_tag_id": {
+          "$ref": "#/$defs/snowflake",
+          "description": "Only used when channel_id is a forum: the tag put on each brief post."
+        },
+        "time": {"$ref": "#/$defs/hhmm", "default": "06:30"},
+        "days": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/weekday"},
+          "uniqueItems": true,
+          "default": ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+        },
+        "airports": {
+          "$ref": "#/$defs/stations",
+          "description": "Airports covered by the brief. Falls back to home_airports when empty."
+        },
+        "winds_aloft_station": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{3}$",
+          "description": "Winds-aloft forecast site, e.g. DEN. Defaults to the nearest to the first airport."
+        },
+        "include": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tafs": {"type": "boolean", "default": true},
+            "winds_aloft": {"type": "boolean", "default": true},
+            "airmets_sigmets": {"type": "boolean", "default": true},
+            "pireps": {"type": "boolean", "default": true},
+            "nws_alerts": {"type": "boolean", "default": true},
+            "afd_aviation": {"type": "boolean", "default": true},
+            "mountain": {"type": "boolean", "default": false}
+          }
+        }
+      }
+    },
+    "alerts": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Short-notice severe-weather posts.",
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "channel_id": {"$ref": "#/$defs/snowflake"},
+        "forum_tag_id": {"$ref": "#/$defs/snowflake"},
+        "mention_role_id": {
+          "$ref": "#/$defs/snowflake",
+          "description": "Role pinged when a new alert is posted. Leave out for no ping."
+        },
+        "area": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "airports": {"$ref": "#/$defs/stations"},
+            "radius_nm": {"type": "integer", "minimum": 5, "maximum": 150, "default": 25}
+          }
+        },
+        "triggers": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "nws_events": {
+              "type": "array",
+              "items": {"type": "string", "maxLength": 64},
+              "uniqueItems": true,
+              "default": [
+                "Tornado Warning",
+                "Severe Thunderstorm Warning",
+                "High Wind Warning",
+                "Extreme Wind Warning",
+                "Blizzard Warning",
+                "Dust Storm Warning",
+                "Flash Flood Warning"
+              ]
+            },
+            "convective_sigmet": {"type": "boolean", "default": true},
+            "cwa": {"type": "boolean", "default": true},
+            "metar_thunderstorm": {"type": "boolean", "default": true},
+            "metar_gust_kt": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100,
+              "default": 35,
+              "description": "Alert when a reported gust reaches this. 0 turns gust alerts off."
+            },
+            "metar_funnel": {"type": "boolean", "default": true}
+          }
+        },
+        "cooldown_min": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 240,
+          "default": 30,
+          "description": "Minimum gap between new posts of the same kind. Updates to an existing post are not limited."
+        },
+        "quiet_hours": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "No role ping between these local times. The post still goes out.",
+          "properties": {
+            "start": {"$ref": "#/$defs/hhmm"},
+            "end": {"$ref": "#/$defs/hhmm"}
+          },
+          "required": ["start", "end"]
+        }
+      }
+    },
+    "mountain": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Mountain-flying information.",
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "region": {"type": "string", "pattern": "^[a-z0-9_]+$", "default": "co_front_range"},
+        "passes": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[a-z0-9_]+$"},
+          "uniqueItems": true,
+          "description": "Pass IDs from the region file. Empty means all of them."
+        }
+      }
+    }
+  }
+}

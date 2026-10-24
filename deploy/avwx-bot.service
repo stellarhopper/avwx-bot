@@ -1,0 +1,32 @@
+[Unit]
+Description=avwx-bot - aviation weather for Discord
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=stellarhopper
+WorkingDirectory=/home/stellarhopper/avwx-bot
+ExecStart=/home/stellarhopper/avwx-bot/.venv/bin/python -m bot
+Restart=always
+RestartSec=10
+StandardOutput=append:/var/log/avwx-bot/output.log
+StandardError=append:/var/log/avwx-bot/error.log
+
+# Environment
+Environment="PYTHONUNBUFFERED=1"
+# The database lives outside the checkout on purpose: deployment does
+# `git reset --hard`, and server configs have no business sitting in a
+# directory that deployment rewrites. StateDirectory creates and owns
+# /var/lib/avwx-bot for us.
+StateDirectory=avwx-bot
+Environment="DB_PATH=/var/lib/avwx-bot/avwx.db"
+# Optional: the bot reads .env itself, so a missing file is not an error.
+EnvironmentFile=-/home/stellarhopper/avwx-bot/.env
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

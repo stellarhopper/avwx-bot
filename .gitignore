@@ -1,0 +1,11 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.env
+deploy/.env.mqtt
+data/*.db*
+.pytest_cache/
+*.egg-info/
+preview/
+_site/

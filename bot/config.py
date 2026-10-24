@@ -1,0 +1,74 @@
+"""Process-level configuration.
+
+Only a few things live here: the bot token, an optional dev guild for fast
+command sync, the database path, the configurator's URL and the User-Agent sent
+to the weather APIs. Everything a server admin might want to change — which
+features are on, which airports, which channels — lives in the database per
+guild and arrives through `/avwx config import`, so the bot can be added to a
+server and run without anyone editing files on disk.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+DEFAULT_SITE_URL = "https://stellarhopper.github.io/avwx-bot/"
+# api.weather.gov refuses requests without a User-Agent and asks for a way to
+# reach the operator in it. The repo URL is that contact.
+DEFAULT_USER_AGENT = "avwx-bot (+https://github.com/stellarhopper/avwx-bot)"
+
+
+def load_env_file(path: Path | None = None) -> None:
+    """Populate os.environ from a .env file.
+
+    Real environment variables always win, so a systemd unit's Environment=
+    lines override the file rather than the other way around.
+    """
+    path = path or ROOT / ".env"
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    for line in text.splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key = key.strip()
+        value = value.strip().strip("\"'")
+        if key and value and key not in os.environ:
+            os.environ[key] = value
+
+
+def _optional_int(name: str) -> int | None:
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        raise SystemExit(f"{name} must be a number, got {raw!r}") from None
+
+
+class Config:
+    """Snapshot of the environment, read once at startup."""
+
+    def __init__(self) -> None:
+        self.token = os.environ.get("DISCORD_TOKEN", "").strip()
+        self.dev_guild_id = _optional_int("DEV_GUILD_ID")
+        raw_db = os.environ.get("DB_PATH", "").strip()
+        self.db_path = Path(raw_db) if raw_db else ROOT / "data" / "avwx.db"
+        self.site_url = os.environ.get("CONFIG_SITE_URL", "").strip() or DEFAULT_SITE_URL
+        self.user_agent = (
+            os.environ.get("HTTP_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
+        )
+
+    def require_token(self) -> str:
+        if not self.token:
+            raise SystemExit(
+                "DISCORD_TOKEN is not set. Copy .env.example to .env and fill it in."
+            )
+        return self.token
