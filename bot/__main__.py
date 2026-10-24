@@ -21,6 +21,7 @@ EXTENSIONS = (
     "bot.cogs.wx",
     "bot.cogs.admin",
     "bot.cogs.brief",
+    "bot.cogs.alerts",
 )
 
 

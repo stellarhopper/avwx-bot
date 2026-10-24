@@ -14,11 +14,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import ROOT
-from .. import briefing, hazards
+from .. import alerting, briefing, hazards
 from ..sources import awc, nws, windsaloft
 from ..sources.awc import Metar, Taf
 from ..wx import fmt
-from . import brief, cards, theme, winds
+from . import alert, brief, cards, theme, winds
 
 FIXTURES = ROOT / "tests" / "fixtures"
 NOW = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc)
@@ -46,6 +46,11 @@ def render_all(out: Path) -> list[Path]:
     save("brief.png", brief.render(sample_brief()))
     w = sample_brief().winds
     save("winds.png", winds.winds_card(w.site, w.valid, w.use, w.levels, units=fmt.Units()))
+    floods = [nws.Alert.from_feature(f) for f in load("nws_alerts_co.json")["features"]]
+    [flood, *_] = alerting.nws_candidates(floods, ["Flood Warning"], NOW)
+    metar = Metar.from_api({**load("metar.json")[3], "wxString": "+TSRA", "wgst": 44})
+    gust = alerting.metar_candidates([metar], thunderstorm=True, gust_kt=35, funnel=True, now=metar.observed)
+    save("alert.png", theme.stack([alert.alert_card(c, tz=TZ, now=NOW) for c in [flood, *gust]]))
     return written
 
 

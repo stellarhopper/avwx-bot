@@ -55,6 +55,11 @@ class Alert:
     references: tuple[str, ...]
     polygons: tuple[tuple[tuple[float, float], ...], ...]
     zones: tuple[str, ...]
+    vtec: tuple[str, ...] = ()
+    nws_headline: str = ""
+    max_gust: str = ""
+    max_hail: str = ""
+    motion: str = ""
 
     @property
     def until(self) -> datetime | None:
@@ -64,6 +69,7 @@ class Alert:
     @classmethod
     def from_feature(cls, f: dict) -> "Alert":
         p = f.get("properties") or {}
+        params = p.get("parameters") or {}
         return cls(
             id=p.get("id") or f.get("id") or "",
             event=p.get("event") or "",
@@ -83,7 +89,19 @@ class Alert:
             references=tuple(r.get("identifier", "") for r in p.get("references") or []),
             polygons=_polygons(f.get("geometry")),
             zones=tuple(p.get("affectedZones") or ()),
+            vtec=tuple(params.get("VTEC") or ()),
+            nws_headline=_first(params.get("NWSheadline")),
+            max_gust=_first(params.get("maxWindGust")),
+            max_hail=_first(params.get("maxHailSize")),
+            motion=_first(params.get("eventMotionDescription")),
         )
+
+
+def _first(values) -> str:
+    """NWS parameters are lists of strings; nearly always exactly one."""
+    if isinstance(values, list) and values:
+        return str(values[0])
+    return ""
 
 
 def _ring(ring) -> tuple[tuple[float, float], ...]:
