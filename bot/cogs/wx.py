@@ -12,6 +12,7 @@ from discord.ext import commands
 
 from .. import context
 from ..render import cards, theme
+from ..sources.http import SourceError
 
 log = logging.getLogger(__name__)
 
@@ -65,12 +66,18 @@ class Wx(commands.Cog):
         if not metars:
             await interaction.followup.send(f"No current METAR for {', '.join(ids)}.")
             return
+        try:
+            ends = await self.bot.awc.runways(m.station for m in metars)
+        except SourceError:
+            ends = {}  # the card is still useful without the runway overlay
 
         def render() -> bytes:
-            return theme.stack([cards.metar_card(m, units=ctx.units, tz=ctx.tz) for m in metars])
+            return theme.stack([
+                cards.metar_card(m, units=ctx.units, tz=ctx.tz, runways=ends.get(m.station)) for m in metars
+            ])
 
         image = await asyncio.to_thread(render)
-        alt = " | ".join(cards.metar_alt(m, ctx.units) for m in metars)
+        alt = " | ".join(cards.metar_alt(m, ctx.units, ends.get(m.station)) for m in metars)
         content = raw_block([m.raw for m in metars])
         if missing:
             content += f"\nNo current METAR for {', '.join(missing)}."

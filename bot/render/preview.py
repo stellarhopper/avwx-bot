@@ -20,7 +20,7 @@ from .. import alerting, briefing, guildcfg, hazards, mountain, regions
 from ..sources import awc, nws, windsaloft
 from ..sources.http import Http
 from ..sources.awc import Metar, Taf
-from ..wx import fmt
+from ..wx import fmt, runways
 from . import alert, brief, cards, theme, winds
 from . import mountain as mountain_render
 
@@ -43,7 +43,10 @@ def render_all(out: Path) -> list[Path]:
         written.append(path)
 
     metars = [Metar.from_api(d) for d in load("metar.json")]
-    save("metar.png", theme.stack([cards.metar_card(m, units=fmt.Units(), tz=TZ, now=NOW) for m in metars]))
+    ends = {a["icaoId"]: runways.runway_ends(a["runways"], a["magdec"]) for a in load("airport.json")}
+    save("metar.png", theme.stack([
+        cards.metar_card(m, units=fmt.Units(), tz=TZ, now=NOW, runways=ends.get(m.station)) for m in metars
+    ]))
     tafs = [Taf.from_api(d) for d in load("taf.json")]
     save("taf.png", theme.stack([cards.taf_card(t, tz=TZ, now=NOW) for t in tafs]))
 

@@ -152,14 +152,12 @@ class Canvas:
         return buf.getvalue()
 
 
-def wind_arrow(c: Canvas, cx: float, cy: float, radius: float, direction: int | None, *, color=TEXT) -> None:
-    """A compass ring with an arrow pointing where the wind is going *to*.
-
-    Wind is reported as where it comes *from*, so a 270° wind draws an arrow
-    pointing east, the way it would push the aircraft.
-    """
+def compass(c: Canvas, cx: float, cy: float, radius: float, *, letters=("N", "E", "S", "W")) -> None:
+    """The ring and tick marks a wind arrow sits on."""
     c.circle(cx, cy, radius, outline=BORDER, width=1.5)
     for deg, label in ((0, "N"), (90, "E"), (180, "S"), (270, "W")):
+        if label not in letters:
+            continue
         rad = math.radians(deg)
         lx = cx + math.sin(rad) * (radius + 9)
         ly = cy - math.cos(rad) * (radius + 9)
@@ -175,8 +173,14 @@ def wind_arrow(c: Canvas, cx: float, cy: float, radius: float, direction: int | 
             fill=BORDER,
             width=1,
         )
-    if direction is None:
-        return
+
+
+def arrow(c: Canvas, cx: float, cy: float, radius: float, direction: int, *, color=TEXT) -> None:
+    """An arrow pointing where the wind is going *to*.
+
+    Wind is reported as where it comes *from*, so a 270° wind draws an arrow
+    pointing east, the way it would push the aircraft.
+    """
     to = math.radians((direction + 180) % 360)
     tip = (cx + math.sin(to) * (radius - 6), cy - math.cos(to) * (radius - 6))
     tail = (cx - math.sin(to) * (radius - 6), cy + math.cos(to) * (radius - 6))
@@ -185,6 +189,23 @@ def wind_arrow(c: Canvas, cx: float, cy: float, radius: float, direction: int | 
     left = (tip[0] - math.sin(to - 0.45) * head, tip[1] + math.cos(to - 0.45) * head)
     right = (tip[0] - math.sin(to + 0.45) * head, tip[1] + math.cos(to + 0.45) * head)
     c.polygon([tip, left, right], fill=color)
+
+
+def wind_arrow(c: Canvas, cx: float, cy: float, radius: float, direction: int | None, *, color=TEXT) -> None:
+    compass(c, cx, cy, radius)
+    if direction is not None:
+        arrow(c, cx, cy, radius, direction, color=color)
+
+
+def runway(c: Canvas, cx: float, cy: float, length: float, heading: float, *, width=8, fill=BORDER) -> None:
+    """A runway strip through (cx, cy) along `heading` (degrees true)."""
+    rad = math.radians(heading)
+    dx, dy = math.sin(rad) * length / 2, -math.cos(rad) * length / 2
+    px, py = math.cos(rad) * width / 2, math.sin(rad) * width / 2
+    c.polygon(
+        [(cx - dx - px, cy - dy - py), (cx - dx + px, cy - dy + py), (cx + dx + px, cy + dy + py), (cx + dx - px, cy + dy - py)],
+        fill=fill,
+    )
 
 
 def stack(images: list[bytes], *, gap: float = 10) -> bytes:

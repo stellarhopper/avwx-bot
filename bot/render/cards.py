@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .. import clock
 from ..sources.awc import Metar, Taf, TafPeriod
-from ..wx import fmt
+from ..wx import fmt, runways
+from ..wx.runways import RunwayEnd
 from . import theme
 from .theme import BORDER, FAINT, MUTED, PANEL, PANEL_HI, TEXT, WARN, Canvas
 
@@ -40,12 +42,19 @@ def _raw_block(c: Canvas, y: float, raw: str) -> float:
     return y + h
 
 
-def metar_card(m: Metar, *, units: fmt.Units, tz: ZoneInfo, now: datetime | None = None) -> bytes:
+def metar_card(
+    m: Metar,
+    *,
+    units: fmt.Units,
+    tz: ZoneInfo,
+    now: datetime | None = None,
+    runways: list[RunwayEnd] | None = None,
+) -> bytes:
     now = now or clock.now()
     probe = Canvas(WIDTH, 10)
     raw_lines = len(probe.wrap(m.raw, WIDTH - 2 * PAD - 20, style="mono", size=11))
     wx_strip = 34 if m.weather else 0
-    body = 140
+    body = 172
     height = 60 + body + 12 + wx_strip + (14 + 16 * raw_lines) + PAD
     c = Canvas(WIDTH, height)
     color = theme.category_color(m.flight_category)
@@ -63,13 +72,15 @@ def metar_card(m: Metar, *, units: fmt.Units, tz: ZoneInfo, now: datetime | None
         c.text(WIDTH - PAD, PAD + 34, "STALE", style="bold", size=10, fill=WARN, anchor="ra")
 
     top = 60
-    # Wind rose on the left.
+    # Wind rose on the left, with the runways under the arrow.
     c.rect(PAD, top, 150, body, fill=PANEL, radius=10)
-    cx, cy = PAD + 75, top + 62
-    calm = not m.wind_speed and not m.wind_gust
-    theme.wind_arrow(c, cx, cy, 40, None if m.wind_variable or calm else m.wind_dir, color=color)
-    c.text(cx, top + body - 14, fmt.wind(m.wind_dir, m.wind_speed, m.wind_gust, variable=m.wind_variable),
+    _wind_rose(c, PAD + 75, top + 64, 40, m, color, runways or [])
+    c.text(PAD + 75, top + body - 34, fmt.wind(m.wind_dir, m.wind_speed, m.wind_gust, variable=m.wind_variable),
            style="semibold", size=12, anchor="mm")
+    note, note_color = _runway_note(m, runways or [])
+    if note:
+        c.text(PAD + 75, top + body - 15, note, style="semibold", size=_fit(c, note, 136, 11), fill=note_color,
+               anchor="mm")
 
     # A 3×2 grid of values to its right.
     gx = PAD + 150 + 10
@@ -100,6 +111,58 @@ def metar_card(m: Metar, *, units: fmt.Units, tz: ZoneInfo, now: datetime | None
     return c.png()
 
 
+def _wind_rose(c: Canvas, cx: float, cy: float, r: float, m: Metar, color, ends: list[RunwayEnd]) -> None:
+    calm = not m.wind_speed and not m.wind_gust
+    choice = runways.best(ends, None if m.wind_variable else m.wind_dir, m.wind_speed, m.wind_gust)
+    labels: list[tuple[float, str, object]] = []
+    if choice:
+        # A runway end's number is painted at the end you land *from*, which is
+        # the opposite side of the airport from where it points.
+        labels.append(((choice.end.heading + 180) % 360, choice.end.name, TEXT))
+        labels.append((choice.end.heading, choice.end.opposite, FAINT))
+    near_north = any(min(b, 360 - b) < 25 for b, _, _ in labels)
+    theme.compass(c, cx, cy, r, letters=() if near_north else ("N",))
+    for e in ends:
+        theme.runway(c, cx, cy, 2 * r - 12, e.heading, width=6, fill=PANEL_HI)
+    if choice:
+        theme.runway(c, cx, cy, 2 * r - 12, choice.end.heading, width=8, fill=MUTED)
+    for bearing, name, fill in labels:
+        rad = math.radians(bearing)
+        c.text(cx + math.sin(rad) * (r + 11), cy - math.cos(rad) * (r + 10), name, style="semibold", size=9,
+               fill=fill, anchor="mm")
+    if not (m.wind_variable or calm) and m.wind_dir is not None:
+        theme.arrow(c, cx, cy, r, m.wind_dir, color=color)
+
+
+def _runway_note(m: Metar, ends: list[RunwayEnd]) -> tuple[str, object]:
+    """Short components line under the rose: "30R  HW 8 · XW 6L G10"."""
+    if not ends:
+        return "", MUTED
+    if not m.wind_speed and not m.wind_gust:
+        return "", MUTED  # the wind line above already says Calm
+    if m.wind_variable or m.wind_dir is None:
+        return f"Variable · XW up to {m.wind_gust or m.wind_speed}", WARN
+    choice = runways.best(ends, m.wind_dir, m.wind_speed, m.wind_gust)
+    if choice is None:
+        return "", MUTED
+    head = round(choice.headwind)
+    head_text = f"HW {head}" if head >= 0 else f"TW {-head}"
+    cross = round(choice.crosswind)
+    cross_text = f"XW {cross}{choice.cross_from}" if cross else "XW 0"
+    if choice.gust_crosswind is not None and round(choice.gust_crosswind) > cross:
+        cross_text += f" G{round(choice.gust_crosswind)}"
+    worst = choice.gust_crosswind if choice.gust_crosswind is not None else choice.crosswind
+    note_color = theme.DANGER if worst >= 20 or head < 0 else WARN if worst >= 12 else TEXT
+    return f"{choice.end.name}  {head_text} · {cross_text}", note_color
+
+
+def _fit(c: Canvas, text: str, width: float, size: float, *, style="semibold") -> float:
+    """The largest size up to `size` at which `text` fits in `width`."""
+    while size > 8 and c.text_width(text, style=style, size=size) > width:
+        size -= 0.5
+    return size
+
+
 def _da_color(m: Metar):
     da, elev = m.density_altitude_ft, m.elevation_ft
     if da is None or elev is None:
@@ -119,7 +182,7 @@ def _da_note(m: Metar) -> str:
     return f"{sign}{abs(round(delta / 10) * 10):,.0f} vs field"
 
 
-def metar_alt(m: Metar, units: fmt.Units) -> str:
+def metar_alt(m: Metar, units: fmt.Units, ends: list[RunwayEnd] | None = None) -> str:
     parts = [
         f"{m.station} {m.flight_category}",
         f"wind {fmt.wind(m.wind_dir, m.wind_speed, m.wind_gust, variable=m.wind_variable)}",
@@ -132,6 +195,9 @@ def metar_alt(m: Metar, units: fmt.Units) -> str:
         parts.append(f"density altitude {fmt.feet(m.density_altitude_ft)}")
     if m.weather:
         parts.append(f"weather {m.weather}")
+    choice = runways.best(ends or [], None if m.wind_variable else m.wind_dir, m.wind_speed, m.wind_gust)
+    if choice:
+        parts.append(runways.describe(choice))
     return ", ".join(parts)
 
 
@@ -173,7 +239,7 @@ def taf_card(t: Taf, *, tz: ZoneInfo, now: datetime | None = None) -> bytes:
     now = now or clock.now()
     probe = Canvas(WIDTH, 10)
     raw_lines = len(probe.wrap(t.raw, WIDTH - 2 * PAD - 20, style="mono", size=11))
-    timeline_h = 78
+    timeline_h = 98
     rows = len(t.periods)
     height = 60 + timeline_h + 10 + rows * ROW_H + 12 + (14 + 16 * raw_lines) + PAD
     c = Canvas(WIDTH, height)
@@ -219,6 +285,18 @@ def taf_card(t: Taf, *, tz: ZoneInfo, now: datetime | None = None) -> bytes:
         if t.valid_from <= now <= t.valid_to:
             nx = x_at(now)
             c.line([(nx, bar_y - 4), (nx, bar_y + bar_h + 4)], fill=TEXT, width=2)
+
+        # Key: what the two bars are.
+        ky = top + timeline_h - 13
+        c.rect(x0, ky - 5, 14, 10, fill=MUTED)
+        c.text(x0 + 20, ky, "Forecast", size=9.5, fill=MUTED, anchor="lm")
+        kx = x0 + 20 + c.text_width("Forecast", size=9.5) + 18
+        c.rect(kx, ky - 2, 14, 4, fill=MUTED, radius=2)
+        c.text(kx + 20, ky, "TEMPO / PROB: temporary or possible conditions", size=9.5, fill=MUTED, anchor="lm")
+        if t.valid_from <= now <= t.valid_to:
+            c.text(x1, ky, "now", size=9.5, fill=MUTED, anchor="rm")
+            lx = x1 - c.text_width("now", size=9.5) - 7
+            c.line([(lx, ky - 6), (lx, ky + 6)], fill=TEXT, width=2)
 
     y = top + timeline_h + 10
     for p in t.periods:

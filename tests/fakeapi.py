@@ -43,6 +43,9 @@ class FixtureHttp(Http):
                 if d["icaoId"] in ids
             ]
             return 200, json.dumps(out)
+        if product == "airport":
+            ids = set(params.get("ids", "").split(","))
+            return 200, json.dumps([d for d in fixture_json("airport.json") if d["icaoId"] in ids])
         if product == "pirep":
             return 200, fixture_text("pirep.json")
         if product == "airsigmet":

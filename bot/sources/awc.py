@@ -20,6 +20,7 @@ from datetime import datetime, timezone
 from .. import clock
 from ..wx import flightcat
 from ..wx.density_alt import FT_PER_M, density_altitude, hpa_to_inhg
+from ..wx.runways import RunwayEnd, runway_ends
 from . import windsaloft
 from .http import Http
 
@@ -29,6 +30,7 @@ BASE = "https://aviationweather.gov/api/data"
 TTL_METAR = 120
 TTL_TAF = 600
 TTL_STATION = 24 * 3600
+TTL_AIRPORT = 24 * 3600
 TTL_PIREP = 300
 TTL_SIGMET = 300
 TTL_GAIRMET = 900
@@ -439,6 +441,18 @@ class Awc:
                     state=d.get("state") or "",
                     country=d.get("country") or "",
                 )
+        return out
+
+    async def runways(self, ids: Iterable[str]) -> dict[str, list[RunwayEnd]]:
+        """Paved runway ends per airport, with true headings. Airports without
+        any (or unknown to the database) are absent."""
+        wanted = sorted({i.upper() for i in ids})
+        out: dict[str, list[RunwayEnd]] = {}
+        for chunk in _chunks(wanted):
+            for d in await self._get("airport", {"ids": ",".join(chunk)}, TTL_AIRPORT) or []:
+                ends = runway_ends(d.get("runways") or [], d.get("magdec"))
+                if d.get("icaoId") and ends:
+                    out[d["icaoId"]] = ends
         return out
 
     async def pireps(self, near: str, distance_nm: int = 100, age_hours: int = 3) -> list[Pirep]:
