@@ -22,7 +22,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import guildcfg, perms, regions
+from .. import guildcfg, perms, posting, regions
 from ..sources.http import SourceError
 
 log = logging.getLogger(__name__)
@@ -344,6 +344,28 @@ class Admin(commands.Cog):
     @app_commands.choices(feature=FEATURE_CHOICES)
     async def disable(self, interaction: discord.Interaction, feature: app_commands.Choice[str]) -> None:
         await self._switch(interaction, feature.value, False)
+
+    @avwx.command(name="post-brief", description="Post the morning brief now, to check the channel and layout")
+    async def post_brief(self, interaction: discord.Interaction) -> None:
+        if not await perms.require_admin(self.bot.store, interaction):
+            return
+        cfg = guildcfg.effective(self.bot.store.get_config(interaction.guild_id))
+        if not cfg["brief"].get("channel_id"):
+            await interaction.response.send_message(
+                "There's no brief channel set. Choose one with `/avwx config edit`.", ephemeral=True
+            )
+            return
+        await interaction.response.defer(ephemeral=True, thinking=True)
+        briefs = self.bot.get_cog("Briefs")
+        try:
+            posted = await briefs.post_brief(interaction.guild, cfg, day=None)
+        except (posting.PostError, SourceError) as exc:
+            await interaction.followup.send(f"Couldn't post the brief: {exc}", ephemeral=True)
+            return
+        where = f"<#{posted.thread_id}>" if posted.thread_id else f"<#{posted.channel_id}>"
+        await interaction.followup.send(
+            f"Posted to {where}. Today's scheduled brief will still go out as normal.", ephemeral=True
+        )
 
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:

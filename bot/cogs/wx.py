@@ -20,12 +20,21 @@ MAX_STATIONS = 4
 CONTENT_LIMIT = 2000
 
 
-def raw_block(lines: list[str]) -> str:
-    """Raw reports in a code block, trimmed to fit a message."""
-    body = "\n".join(lines)
-    if len(body) > CONTENT_LIMIT - 10:
-        body = body[: CONTENT_LIMIT - 14] + "\n…"
-    return f"```\n{body}\n```"
+def raw_block(lines: list[str], *, limit: int = CONTENT_LIMIT) -> str:
+    """Raw reports in a code block of at most `limit` characters, fences included.
+
+    Whole lines are dropped from the end rather than one being cut mid-report.
+    """
+    room = limit - 8  # the two fences and their newlines
+    kept: list[str] = []
+    used = 0
+    for line in lines:
+        if used + len(line) + 1 > room - 2:
+            kept.append("…")
+            break
+        kept.append(line)
+        used += len(line) + 1
+    return "```\n" + "\n".join(kept) + "\n```"
 
 
 def png_file(data: bytes, name: str, alt: str) -> discord.File:

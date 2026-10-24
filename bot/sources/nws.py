@@ -21,6 +21,7 @@ TTL_ALERTS = 60
 TTL_AFD_LIST = 600
 TTL_AFD = 3600
 TTL_ZONE = 24 * 3600
+TTL_POINT = 7 * 24 * 3600
 
 _SECTION = re.compile(r"^\.([A-Z][A-Z /]+?)(?:\s*/[^\n]*?)?\.\.\.", re.MULTILINE)
 
@@ -144,6 +145,12 @@ class Nws:
             return ()
         data = await self.http.get_json(zone_url, ttl=TTL_ZONE, accept=GEOJSON)
         return _polygons((data or {}).get("geometry"))
+
+    async def office_for(self, lat: float, lon: float) -> str | None:
+        """The forecast office (e.g. BOU) responsible for a point."""
+        # More than four decimal places gets a redirect; fewer keeps the cache key stable.
+        data = await self.http.get_json(f"{BASE}/points/{lat:.4f},{lon:.4f}", ttl=TTL_POINT, accept=GEOJSON)
+        return ((data or {}).get("properties") or {}).get("cwa")
 
     async def discussion(self, office: str) -> Discussion | None:
         listing = await self.http.get_json(

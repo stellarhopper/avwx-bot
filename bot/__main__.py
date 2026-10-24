@@ -20,6 +20,7 @@ log = logging.getLogger("avwx")
 EXTENSIONS = (
     "bot.cogs.wx",
     "bot.cogs.admin",
+    "bot.cogs.brief",
 )
 
 
