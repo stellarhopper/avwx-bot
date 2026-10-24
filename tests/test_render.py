@@ -50,3 +50,15 @@ def test_alt_text_is_meaningful():
 def test_bundled_fonts_load():
     f = theme.font("regular", 12)
     assert "Inter" in " ".join(f.getname())
+
+
+def test_every_card_renders(tmp_path):
+    """The preview script draws every renderer from fixtures; none may fail or come out blank."""
+    from bot.render import preview
+
+    paths = preview.render_all(tmp_path)
+    assert {p.name for p in paths} == {"metar.png", "taf.png", "mountain.png", "brief.png", "winds.png", "alert.png"}
+    for path in paths:
+        img = Image.open(path)
+        assert img.width >= 1000 and img.height >= 200
+        assert len(img.convert("L").resize((40, 40)).getcolors(1600)) > 5  # not a blank fill

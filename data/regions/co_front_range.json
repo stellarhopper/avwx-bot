@@ -11,6 +11,8 @@
     "cross_to_deg": 320,
     "levels_ft": [12000, 18000]
   },
+  "pirep_center": "KLXV",
+  "pirep_radius_nm": 120,
   "mountain_airports": ["KLXV", "KCCU", "KASE", "KEGE", "KGUC", "KALS", "KGNB", "KSBS", "KTEX", "KAEJ", "KANK"],
   "weathercams_url": "https://weathercams.faa.gov/map/-109.2,36.8,-102.0,41.1",
   "passes": [

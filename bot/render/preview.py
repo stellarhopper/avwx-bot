@@ -14,11 +14,15 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..config import ROOT
-from .. import alerting, briefing, hazards
+import asyncio
+
+from .. import alerting, briefing, guildcfg, hazards, mountain, regions
 from ..sources import awc, nws, windsaloft
+from ..sources.http import Http
 from ..sources.awc import Metar, Taf
 from ..wx import fmt
 from . import alert, brief, cards, theme, winds
+from . import mountain as mountain_render
 
 FIXTURES = ROOT / "tests" / "fixtures"
 NOW = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc)
@@ -43,7 +47,11 @@ def render_all(out: Path) -> list[Path]:
     tafs = [Taf.from_api(d) for d in load("taf.json")]
     save("taf.png", theme.stack([cards.taf_card(t, tz=TZ, now=NOW) for t in tafs]))
 
-    save("brief.png", brief.render(sample_brief()))
+    board = sample_board()
+    save("mountain.png", mountain_render.render(board, tz=TZ, units=fmt.Units()))
+    data = sample_brief()
+    data.mountain = board
+    save("brief.png", brief.render(data))
     w = sample_brief().winds
     save("winds.png", winds.winds_card(w.site, w.valid, w.use, w.levels, units=fmt.Units()))
     floods = [nws.Alert.from_feature(f) for f in load("nws_alerts_co.json")["features"]]
@@ -52,6 +60,37 @@ def render_all(out: Path) -> list[Path]:
     gust = alerting.metar_candidates([metar], thunderstorm=True, gust_kt=35, funnel=True, now=metar.observed)
     save("alert.png", theme.stack([alert.alert_card(c, tz=TZ, now=NOW) for c in [flood, *gust]]))
     return written
+
+
+class FixtureHttp(Http):
+    """Serves the few products the mountain board needs from tests/fixtures."""
+
+    def __init__(self) -> None:
+        super().__init__("preview")
+
+    async def _fetch(self, url, params, accept):
+        product = url.rsplit("/", 1)[-1]
+        if product == "metar":
+            ids = set((params or {}).get("ids", "").split(","))
+            reports = {d["icaoId"]: d for d in load("metar_mountain.json") + load("metar.json")}
+            return 200, json.dumps([d for k, d in reports.items() if k in ids])
+        if product == "windtemp":
+            name = "windtemp_high.txt" if params.get("level") == "high" else "windtemp_all.txt"
+            return 200, (FIXTURES / name).read_text()
+        if product in ("gairmet", "pirep"):
+            return 200, (FIXTURES / f"{product}.json").read_text()
+        if "/products/types/AFD" in url:
+            return 200, json.dumps({"@graph": [{"id": "afd"}]})
+        if "/products/" in url:
+            return 200, (FIXTURES / "afd_bou.json").read_text()
+        return 404, ""
+
+
+def sample_board() -> mountain.MountainBoard:
+    http = FixtureHttp()
+    region = regions.get("co_front_range")
+    cfg = guildcfg.effective({"schema_version": 1})
+    return asyncio.run(mountain.build(awc.Awc(http), nws.Nws(http), region, cfg, now=NOW))
 
 
 def sample_brief() -> briefing.BriefData:

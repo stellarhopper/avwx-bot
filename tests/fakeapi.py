@@ -30,7 +30,7 @@ class FixtureHttp(Http):
             return o(params) if callable(o) else o
         if product == "metar":
             ids = set(params.get("ids", "").split(","))
-            return 200, json.dumps([d for d in fixture_json("metar.json") if d["icaoId"] in ids])
+            return 200, json.dumps([d for d in all_metars() if d["icaoId"] in ids])
         if product == "taf":
             ids = set(params.get("ids", "").split(","))
             return 200, json.dumps([d for d in fixture_json("taf.json") if d["icaoId"] in ids])
@@ -39,7 +39,7 @@ class FixtureHttp(Http):
             out = [
                 {"icaoId": d["icaoId"], "site": d["name"], "lat": d["lat"], "lon": d["lon"], "elev": d["elev"],
                  "state": "CO" if d["icaoId"].startswith("K") else "", "country": "US" if d["icaoId"].startswith("K") else "GB"}
-                for d in fixture_json("metar.json")
+                for d in all_metars()
                 if d["icaoId"] in ids
             ]
             return 200, json.dumps(out)
@@ -65,6 +65,13 @@ class FixtureHttp(Http):
         if product == "zone":
             return 200, json.dumps({"geometry": None})
         return 404, "not routed in tests/fakeapi.py"
+
+
+def all_metars() -> list[dict]:
+    """The airport METARs plus the mountain stations, one report per station."""
+    out = {d["icaoId"]: d for d in fixture_json("metar_mountain.json")}
+    out.update({d["icaoId"]: d for d in fixture_json("metar.json")})
+    return list(out.values())
 
 
 def _nws_product(url: str) -> str:

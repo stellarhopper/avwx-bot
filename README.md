@@ -26,6 +26,7 @@ Hazards, alerts and the mountain features cover the US.
 | `/winds [where]` | Winds and temperatures aloft for an airport's nearest forecast site, or a site such as `DEN` |
 | `/pirep [airport] [radius] [hours]` | Recent pilot reports, with moderate-or-worse turbulence, icing and mountain wave listed first |
 | `/alerts` | Severe weather affecting the server's area right now |
+| `/mountain` | Mountain flying: pass status, mountain-wave risk, ridge-level winds, density altitude. Off until an admin switches it on |
 | `/avwx config edit` | Private link to the configurator, filled in with this server's settings |
 | `/avwx config import file:` | Apply a `config.json` from the configurator. Shows the changes and waits for **Apply** |
 | `/avwx config export` | Download the current settings |
@@ -41,6 +42,34 @@ becomes `KBJC`.
 
 **Each image comes with text:** the raw METAR or TAF goes in the message so it
 can be searched and copied, and the image has alt text.
+
+## Mountain flying
+
+`/mountain` and the brief's mountain section cover the passes in a region file
+in [`data/regions/`](data/regions/). The Front Range file has 16 passes, from
+Rollins and Berthoud to Wolf Creek and Raton. For each pass the file lists:
+
+- the weather station on the pass, where there is one
+- the airports on either side
+- the forecast site for winds aloft
+
+The board then shows:
+
+- **Pass status** (looks OK / caution / no-go). It's based on the station on
+  the pass, mountain-obscuration and IFR G-AIRMETs over the pass, the approach
+  airports, and the forecast wind at the first level at or above the pass:
+  15 kt is caution, 25 kt is no-go.
+- **Mountain-wave risk** (low / elevated / high). It comes from flow across the
+  ridge at 12,000–18,000 ft: from the 240–320° sector at 25 kt or more, and
+  high from 40 kt. It's also raised by Tango G-AIRMETs for wave, by turbulence
+  or wave PIREPs, and by wave or rotor in the forecast discussion.
+- **Ridge-level winds** at each winds-aloft site, and **density altitude** at
+  the mountain airports.
+
+The thresholds are rules of thumb from mountain-flying courses, collected at
+the top of [`bot/mountain.py`](bot/mountain.py). They're there for awareness,
+not as a go/no-go decision. To add a region, add another file in
+`data/regions/`; the configurator picks it up automatically.
 
 ## Configuring a server
 

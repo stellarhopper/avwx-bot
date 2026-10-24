@@ -14,7 +14,7 @@ const BRIEF_PARTS = {
   pireps: "PIREPs",
   nws_alerts: "NWS alerts",
   afd_aviation: "Forecast discussion (aviation section)",
-  mountain: "Mountain flying",
+  mountain: "Mountain flying (also switch it on below)",
 };
 const NWS_EVENTS = [
   "Tornado Warning",

@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import briefing, context, guildcfg, hazards, posting
+from .. import briefing, context, guildcfg, hazards, mountain, posting, regions
 from ..render import brief as brief_render
 from ..render import winds as winds_render
 from ..sources.http import SourceError
@@ -66,6 +66,10 @@ class Briefs(commands.Cog):
 
     async def build(self, cfg: dict, airports: list[str], *, title: str, include: dict | None = None):
         include = include if include is not None else cfg["brief"]["include"]
+        board = None
+        region = regions.get(cfg["mountain"].get("region"))
+        if include.get("mountain") and cfg["mountain"].get("enabled") and region:
+            board = mountain.build(self.bot.awc, self.bot.nws, region, cfg)
         data = await briefing.gather(
             self.bot.awc,
             self.bot.nws,
@@ -73,6 +77,7 @@ class Briefs(commands.Cog):
             airports=airports,
             config=cfg,
             include=include,
+            mountain=board,
         )
         radius = cfg["alerts"]["area"].get("radius_nm", briefing.HAZARD_RADIUS_NM)
         image = await asyncio.to_thread(brief_render.render, data, radius=radius)
