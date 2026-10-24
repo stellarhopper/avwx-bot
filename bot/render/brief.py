@@ -163,7 +163,10 @@ def afd_section(c: Canvas, y: float, data: BriefData, max_lines: int = 12) -> fl
 
 
 def render(data: BriefData, *, radius: int = 30) -> bytes:
-    c = Canvas(WIDTH, MAX_HEIGHT)
+    return theme.compose(WIDTH, lambda c: _draw(c, data, radius), max_height=MAX_HEIGHT)
+
+
+def _draw(c: Canvas, data: BriefData, radius: int) -> float:
     local = data.generated.astimezone(data.tz)
     c.text(PAD, PAD, data.title, style="bold", size=22)
     c.text(PAD, PAD + 30, local.strftime("%A %-d %B %Y · %H:%M %Z"), size=12, fill=MUTED)
@@ -200,10 +203,7 @@ def render(data: BriefData, *, radius: int = 30) -> bytes:
         y += 16
     c.line([(PAD, y + 4), (WIDTH - PAD, y + 4)], fill=BORDER)
     c.text(PAD, y + 12, "aviationweather.gov · weather.gov — for awareness, not an official briefing", size=10, fill=FAINT)
-    y += 34
-
-    c.image = c.image.crop((0, 0, c.image.width, round(y * theme.SCALE)))
-    return c.png()
+    return y + 34
 
 
 def summary_line(data: BriefData) -> str:

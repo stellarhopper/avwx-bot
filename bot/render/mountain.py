@@ -119,7 +119,10 @@ def section_title(c: Canvas, y: float, title: str, note: str = "") -> float:
 
 
 def render(board: MountainBoard, *, tz, units) -> bytes:
-    c = Canvas(WIDTH, 4000)
+    return theme.compose(WIDTH, lambda c: _draw(c, board, tz, units))
+
+
+def _draw(c: Canvas, board: MountainBoard, tz, units) -> float:
     c.text(PAD, PAD, "Mountain flying", style="bold", size=22)
     c.text(PAD, PAD + 30, f"{board.region_name} · {board.generated.astimezone(tz).strftime('%a %-d %b %H:%M %Z')}",
            size=12, fill=MUTED)
@@ -139,9 +142,7 @@ def render(board: MountainBoard, *, tz, units) -> bytes:
     c.line([(PAD, y + 4), (WIDTH - PAD, y + 4)], fill=BORDER)
     c.text(PAD, y + 12, "Heuristics for awareness, not a go/no-go decision. Check the cams and get a briefing.",
            size=10, fill=FAINT)
-    y += 34
-    c.image = c.image.crop((0, 0, c.image.width, round(y * theme.SCALE)))
-    return c.png()
+    return y + 34
 
 
 def section(c: Canvas, y: float, board: MountainBoard, data) -> float:

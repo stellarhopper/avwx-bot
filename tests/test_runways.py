@@ -82,3 +82,36 @@ async def test_metar_command_survives_missing_runway_data():
     i = FakeInteraction(FakeGuild([]))
     await cog.metar.callback(cog, i, "KAPA")
     assert i.last["file"].filename == "metar.png" and "RWY" not in i.last["file"].description
+
+
+def end(name, heading, length):
+    return runways.RunwayEnd(name, heading, length, "x")
+
+
+def test_within_five_degrees_the_longer_runway_wins():
+    short_aligned = end("27", 270, 5000)
+    long_off = end("28", 274, 9000)  # 4° further from the wind
+    assert runways.best([short_aligned, long_off], 270, 15, None).end.name == "28"
+
+
+def test_beyond_five_degrees_alignment_wins():
+    short_aligned = end("27", 270, 5000)
+    long_off = end("28", 276, 9000)  # 6° off: no longer "about equal"
+    assert runways.best([short_aligned, long_off], 270, 15, None).end.name == "27"
+
+
+def test_equal_length_within_margin_takes_the_better_aligned():
+    assert runways.best([end("27", 273, 9000), end("28", 271, 9000)], 270, 15, None).end.name == "28"
+
+
+def test_taf_labels_lead_with_local_time():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    from bot.render.cards import _period_label
+    from bot.sources.awc import TafPeriod
+
+    utc = timezone.utc
+    p = TafPeriod(datetime(2026, 10, 24, 20, tzinfo=utc), datetime(2026, 10, 25, 0, tzinfo=utc), "TEMPO", None,
+                  None, None, None, None, "", [], None, "", None)
+    assert _period_label(p, ZoneInfo("America/Denver")) == ("TEMPO Sat 14–18", "20–00Z")

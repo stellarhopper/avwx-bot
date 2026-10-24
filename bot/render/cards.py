@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import math
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -13,7 +12,7 @@ from ..wx.runways import RunwayEnd
 from . import theme
 from .theme import BORDER, FAINT, MUTED, PANEL, PANEL_HI, TEXT, WARN, Canvas
 
-WIDTH = 560
+WIDTH = 600
 PAD = 16
 
 
@@ -54,7 +53,7 @@ def metar_card(
     probe = Canvas(WIDTH, 10)
     raw_lines = len(probe.wrap(m.raw, WIDTH - 2 * PAD - 20, style="mono", size=11))
     wx_strip = 34 if m.weather else 0
-    body = 172
+    body = 190
     height = 60 + body + 12 + wx_strip + (14 + 16 * raw_lines) + PAD
     c = Canvas(WIDTH, height)
     color = theme.category_color(m.flight_category)
@@ -73,17 +72,18 @@ def metar_card(
 
     top = 60
     # Wind rose on the left, with the runways under the arrow.
-    c.rect(PAD, top, 150, body, fill=PANEL, radius=10)
-    _wind_rose(c, PAD + 75, top + 64, 40, m, color, runways or [])
-    c.text(PAD + 75, top + body - 34, fmt.wind(m.wind_dir, m.wind_speed, m.wind_gust, variable=m.wind_variable),
-           style="semibold", size=12, anchor="mm")
+    rose_w = 196
+    c.rect(PAD, top, rose_w, body, fill=PANEL, radius=10)
+    _wind_rose(c, PAD + rose_w / 2, top + 78, 60, m, color, runways or [])
+    c.text(PAD + rose_w / 2, top + body - 34, fmt.wind(m.wind_dir, m.wind_speed, m.wind_gust, variable=m.wind_variable),
+           style="semibold", size=12.5, anchor="mm")
     note, note_color = _runway_note(m, runways or [])
     if note:
-        c.text(PAD + 75, top + body - 15, note, style="semibold", size=_fit(c, note, 136, 11), fill=note_color,
-               anchor="mm")
+        c.text(PAD + rose_w / 2, top + body - 14, note, style="semibold", size=_fit(c, note, rose_w - 14, 11.5),
+               fill=note_color, anchor="mm")
 
     # A 3×2 grid of values to its right.
-    gx = PAD + 150 + 10
+    gx = PAD + rose_w + 10
     gap = 8
     tw = (WIDTH - PAD - gx - 2 * gap) / 3
     th = (body - gap) / 2
@@ -114,22 +114,17 @@ def metar_card(
 def _wind_rose(c: Canvas, cx: float, cy: float, r: float, m: Metar, color, ends: list[RunwayEnd]) -> None:
     calm = not m.wind_speed and not m.wind_gust
     choice = runways.best(ends, None if m.wind_variable else m.wind_dir, m.wind_speed, m.wind_gust)
-    labels: list[tuple[float, str, object]] = []
-    if choice:
-        # A runway end's number is painted at the end you land *from*, which is
-        # the opposite side of the airport from where it points.
-        labels.append(((choice.end.heading + 180) % 360, choice.end.name, TEXT))
-        labels.append((choice.end.heading, choice.end.opposite, FAINT))
-    near_north = any(min(b, 360 - b) < 25 for b, _, _ in labels)
-    theme.compass(c, cx, cy, r, letters=() if near_north else ("N",))
+    theme.compass(c, cx, cy, r, letters=("N",))
+    length = 2 * r - 6
+    drawn = set()
     for e in ends:
-        theme.runway(c, cx, cy, 2 * r - 12, e.heading, width=6, fill=PANEL_HI)
+        pair = frozenset((e.name, e.opposite))
+        if pair in drawn or (choice and pair == frozenset((choice.end.name, choice.end.opposite))):
+            continue
+        drawn.add(pair)
+        theme.runway(c, cx, cy, length * 0.92, e.heading, width=12)
     if choice:
-        theme.runway(c, cx, cy, 2 * r - 12, choice.end.heading, width=8, fill=MUTED)
-    for bearing, name, fill in labels:
-        rad = math.radians(bearing)
-        c.text(cx + math.sin(rad) * (r + 11), cy - math.cos(rad) * (r + 10), name, style="semibold", size=9,
-               fill=fill, anchor="mm")
+        theme.marked_runway(c, cx, cy, length, choice.end.heading, choice.end.name, choice.end.opposite)
     if not (m.wind_variable or calm) and m.wind_dir is not None:
         theme.arrow(c, cx, cy, r, m.wind_dir, color=color)
 
@@ -201,20 +196,27 @@ def metar_alt(m: Metar, units: fmt.Units, ends: list[RunwayEnd] | None = None) -
     return ", ".join(parts)
 
 
-def _period_label(p: TafPeriod) -> str:
-    start, end = p.start.strftime("%d/%H"), p.end.strftime("%d/%H")
-    if p.probability:
-        head = f"PROB{p.probability}"
-        if p.change == "TEMPO":
-            head += " TEMPO"
-        return f"{head} {start}–{end}Z"
-    if p.change == "TEMPO":
-        return f"TEMPO {start}–{end}Z"
-    if p.change == "BECMG":
-        return f"BECMG {start}–{end}Z"
+def _period_label(p: TafPeriod, tz: ZoneInfo) -> tuple[str, str]:
+    """(local, zulu) labels for a period: ("TEMPO Sat 14–18", "20–00Z")."""
+    start, end = p.start.astimezone(tz), p.end.astimezone(tz)
     if p.change == "FM":
-        return f"FM {p.start.strftime('%d/%H%M')}Z"
-    return f"{start}–{end}Z"
+        return f"FM {start:%a %H:%M}", p.start.strftime("%H%MZ")
+    if p.probability:
+        head = f"PROB{p.probability}" + (" TEMPO" if p.change == "TEMPO" else "")
+    elif p.change in ("TEMPO", "BECMG"):
+        head = p.change
+    else:
+        head = ""
+    local = f"{head} {start:%a %H}–{end:%H}".strip()
+    return local, f"{p.start:%H}–{p.end:%H}Z"
+
+
+def _clip_width(c: Canvas, text: str, width: float, *, style="regular", size=11) -> str:
+    if c.text_width(text, style=style, size=size) <= width:
+        return text
+    while text and c.text_width(text + "…", style=style, size=size) > width:
+        text = text[:-1]
+    return text.rstrip(" ·") + "…"
 
 
 def _period_values(p: TafPeriod) -> str:
@@ -244,9 +246,10 @@ def taf_card(t: Taf, *, tz: ZoneInfo, now: datetime | None = None) -> bytes:
     height = 60 + timeline_h + 10 + rows * ROW_H + 12 + (14 + 16 * raw_lines) + PAD
     c = Canvas(WIDTH, height)
 
-    issued = f"Issued {fmt.zulu(t.issued)}"
-    valid = f"Valid {fmt.zulu(t.valid_from)} → {fmt.zulu(t.valid_to)}"
-    _header(c, t.station, t.name, issued, valid)
+    # Local time leads; Zulu is there for checking against the raw text.
+    valid = f"Valid {fmt.local(t.valid_from, tz, '%a %H:%M')} → {fmt.local(t.valid_to, tz, '%a %H:%M %Z')}"
+    issued = f"Issued {fmt.local(t.issued, tz, '%a %H:%M')} · {fmt.zulu(t.valid_from)} → {fmt.zulu(t.valid_to)}"
+    _header(c, t.station, t.name, valid, issued)
 
     top = 60
     c.rect(PAD, top, WIDTH - 2 * PAD, timeline_h, fill=PANEL, radius=10)
@@ -278,8 +281,9 @@ def taf_card(t: Taf, *, tz: ZoneInfo, now: datetime | None = None) -> bytes:
         while tick <= t.valid_to:
             x = x_at(tick)
             c.line([(x, cond_y + 10), (x, cond_y + 14)], fill=BORDER)
-            c.text(x, cond_y + 16, tick.strftime("%HZ"), size=9, fill=MUTED, anchor="ma")
-            c.text(x, cond_y + 28, tick.astimezone(tz).strftime("%-I%p").lower(), size=8.5, fill=FAINT, anchor="ma")
+            c.text(x, cond_y + 16, tick.astimezone(tz).strftime("%-I%p").lower(), style="semibold", size=9.5,
+                   fill=TEXT, anchor="ma")
+            c.text(x, cond_y + 29, tick.strftime("%HZ"), size=8, fill=FAINT, anchor="ma")
             tick += timedelta(hours=3)
 
         if t.valid_from <= now <= t.valid_to:
@@ -302,12 +306,16 @@ def taf_card(t: Taf, *, tz: ZoneInfo, now: datetime | None = None) -> bytes:
     for p in t.periods:
         conditional = p.is_conditional
         label_color = MUTED if conditional else TEXT
-        c.text(PAD + (14 if conditional else 0), y + ROW_H / 2, _period_label(p),
-               style="mono-bold" if not conditional else "mono", size=10.5, fill=label_color, anchor="lm")
-        pill_x = PAD + 168
+        local, zulu = _period_label(p, tz)
+        lx = PAD + (14 if conditional else 0)
+        style = "semibold" if not conditional else "regular"
+        c.text(lx, y + ROW_H / 2, local, style=style, size=11, fill=label_color, anchor="lm")
+        c.text(lx + c.text_width(local, style=style, size=11) + 6, y + ROW_H / 2, zulu, style="mono", size=9,
+               fill=FAINT, anchor="lm")
+        pill_x = PAD + 214
         c.pill(pill_x, y + 3, p.flight_category, theme.category_color(p.flight_category), size=9.5)
-        c.text(pill_x + 52, y + ROW_H / 2, _period_values(p)[:70], size=11,
-               fill=label_color, anchor="lm")
+        values = _clip_width(c, _period_values(p), WIDTH - PAD - (pill_x + 52))
+        c.text(pill_x + 52, y + ROW_H / 2, values, size=11, fill=label_color, anchor="lm")
         y += ROW_H
 
     _raw_block(c, y + 12, t.raw)

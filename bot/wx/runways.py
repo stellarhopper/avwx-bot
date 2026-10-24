@@ -87,19 +87,25 @@ def components(wind_dir: float, speed: float, heading: float) -> tuple[float, fl
     return speed * math.cos(angle), speed * math.sin(angle)
 
 
-def best(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: int | None) -> Choice | None:
-    """The end most into the wind; least crosswind breaks ties, then length.
+# Runways whose heading is within this many degrees of the best-aligned one
+# count as equally good, and the longest of them wins. 5° changes the
+# crosswind by under 1 kt in a 10 kt wind, which nobody would pick a shorter
+# runway for.
+SAME_WIND_DEG = 5
 
-    None when there's nothing to choose by: no paved runway, calm, or variable.
+
+def best(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: int | None) -> Choice | None:
+    """The longest runway end among those within SAME_WIND_DEG of the most into-wind.
+
+    Then the better-aligned of those, if lengths tie. None when there's nothing
+    to choose by: no paved runway, calm, or variable.
     """
     if not ends or wind_dir is None or not speed:
         return None
-
-    def score(e: RunwayEnd):
-        head, cross = components(wind_dir, speed, e.heading)
-        return (round(head), -round(abs(cross)), e.length_ft)
-
-    end = max(ends, key=score)
+    offset = {e: _angle_diff(wind_dir, e.heading) for e in ends}
+    closest = min(offset.values())
+    pool = [e for e in ends if offset[e] <= closest + SAME_WIND_DEG]
+    end = max(pool, key=lambda e: (e.length_ft, -offset[e]))
     head, cross = components(wind_dir, speed, end.heading)
     g_head = g_cross = None
     if gust:
