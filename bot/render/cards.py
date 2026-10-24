@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from .. import clock
 from ..sources.awc import Metar, Taf, TafPeriod
 from ..wx import fmt
 from . import theme
@@ -40,7 +41,7 @@ def _raw_block(c: Canvas, y: float, raw: str) -> float:
 
 
 def metar_card(m: Metar, *, units: fmt.Units, tz: ZoneInfo, now: datetime | None = None) -> bytes:
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     probe = Canvas(WIDTH, 10)
     raw_lines = len(probe.wrap(m.raw, WIDTH - 2 * PAD - 20, style="mono", size=11))
     wx_strip = 34 if m.weather else 0
@@ -169,7 +170,7 @@ ROW_H = 24
 
 
 def taf_card(t: Taf, *, tz: ZoneInfo, now: datetime | None = None) -> bytes:
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     probe = Canvas(WIDTH, 10)
     raw_lines = len(probe.wrap(t.raw, WIDTH - 2 * PAD - 20, style="mono", size=11))
     timeline_h = 78

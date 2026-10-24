@@ -5,13 +5,13 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import alerting, briefing, context, guildcfg, hazards, posting
+from .. import alerting, briefing, clock, context, guildcfg, hazards, posting
 from ..alerting import Candidate
 from ..render import alert as alert_render
 from ..sources.http import SourceError
@@ -205,7 +205,7 @@ class Alerts(commands.Cog):
 
     @tasks.loop(minutes=POLL_MINUTES)
     async def watcher(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = clock.now()
         for guild in list(self.bot.guilds):
             cfg = guildcfg.effective(self.bot.store.get_config(guild.id))
             if not cfg["alerts"].get("enabled") or not cfg["alerts"].get("channel_id"):
@@ -232,7 +232,7 @@ class Alerts(commands.Cog):
             )
             return
         await interaction.response.defer(thinking=True)
-        now = datetime.now(timezone.utc)
+        now = clock.now()
         found, failed = await self.candidates(ctx.config, now)
         radius = ctx.config["alerts"]["area"].get("radius_nm", 25)
         head = f"**Within {radius} nm of {', '.join(area_airports(ctx.config))}:**"

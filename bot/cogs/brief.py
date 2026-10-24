@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import briefing, context, guildcfg, hazards, mountain, posting, regions
+from .. import briefing, clock, context, guildcfg, hazards, mountain, posting, regions
 from ..render import brief as brief_render
 from ..render import winds as winds_render
 from ..sources.http import SourceError
@@ -90,7 +90,7 @@ class Briefs(commands.Cog):
         if not airports:
             raise posting.PostError("no airports configured for the brief")
         tz = fmt.zone(cfg.get("timezone"))
-        local = datetime.now(timezone.utc).astimezone(tz)
+        local = clock.now().astimezone(tz)
         title = f"Morning brief — {local.strftime('%a %-d %b')}"
         data, image = await self.build(cfg, airports, title=title)
         raws = [a.metar.raw for a in data.airports if a.metar]
@@ -138,7 +138,7 @@ class Briefs(commands.Cog):
 
     @tasks.loop(minutes=1)
     async def scheduler(self) -> None:
-        now = datetime.now(timezone.utc)
+        now = clock.now()
         for guild in list(self.bot.guilds):
             cfg = guildcfg.effective(self.bot.store.get_config(guild.id))
             day = due_day(now, cfg)

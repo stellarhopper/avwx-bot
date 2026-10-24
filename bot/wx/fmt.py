@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
+from .. import clock
 from .density_alt import c_to_f
 
 
@@ -98,7 +99,7 @@ def local(when: datetime | None, tz: ZoneInfo, fmt: str = "%a %H:%M") -> str:
 def ago(when: datetime | None, now: datetime | None = None) -> str:
     if when is None:
         return ""
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     minutes = int((now - when).total_seconds() // 60)
     if minutes < 1:
         return "just now"

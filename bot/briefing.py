@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 
-from . import hazards
+from . import clock, hazards
 from .sources.awc import Awc, Hazard, Metar, Pirep, Station, Taf
 from .sources.http import SourceError
 from .sources.nws import Alert, Nws
@@ -132,7 +132,7 @@ async def gather(
     now: datetime | None = None,
     mountain=None,
 ) -> BriefData:
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     problems: list[str] = []
     brief_cfg = config.get("brief", {})
     radius = config.get("alerts", {}).get("area", {}).get("radius_nm", HAZARD_RADIUS_NM)

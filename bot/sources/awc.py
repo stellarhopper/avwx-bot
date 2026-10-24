@@ -17,6 +17,7 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 
+from .. import clock
 from ..wx import flightcat
 from ..wx.density_alt import FT_PER_M, density_altitude, hpa_to_inhg
 from . import windsaloft
@@ -147,7 +148,7 @@ class Metar:
     def age_minutes(self, now: datetime | None = None) -> float | None:
         if self.observed is None:
             return None
-        now = now or datetime.now(timezone.utc)
+        now = now or clock.now()
         return (now - self.observed).total_seconds() / 60
 
 

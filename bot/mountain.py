@@ -24,8 +24,9 @@ from __future__ import annotations
 import asyncio
 import re
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime
 
+from . import clock
 from . import hazards as hz
 from .sources.awc import Awc, Hazard, Metar, Pirep
 from .sources.http import SourceError
@@ -229,7 +230,7 @@ async def _guard(problems: list[str], what: str, coro, default):
 
 
 async def build(awc: Awc, nws: Nws, region: dict, cfg: dict, now: datetime | None = None) -> MountainBoard:
-    now = now or datetime.now(timezone.utc)
+    now = now or clock.now()
     wanted = set(cfg.get("mountain", {}).get("passes") or [])
     passes = [p for p in region.get("passes", []) if not wanted or p["id"] in wanted]
     problems: list[str] = []
