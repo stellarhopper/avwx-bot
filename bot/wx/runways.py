@@ -92,20 +92,21 @@ def components(wind_dir: float, speed: float, heading: float) -> tuple[float, fl
 # crosswind by under 1 kt in a 10 kt wind, which nobody would pick a shorter
 # runway for.
 SAME_WIND_DEG = 5
+# At or below this (steady or gust, whichever is higher), wind doesn't decide
+# the runway: the longest one does.
+LIGHT_WIND_KT = 3
+# Below this, the longest runway is worth showing alongside the best-aligned
+# one: the wind is light enough that it's a real option.
+SHOW_LONGEST_BELOW_KT = 10
 
 
-def best(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: int | None) -> Choice | None:
-    """The longest runway end among those within SAME_WIND_DEG of the most into-wind.
+def total_wind(speed: int | None, gust: int | None) -> int:
+    return max(speed or 0, gust or 0)
 
-    Then the better-aligned of those, if lengths tie. None when there's nothing
-    to choose by: no paved runway, calm, or variable.
-    """
-    if not ends or wind_dir is None or not speed:
-        return None
-    offset = {e: _angle_diff(wind_dir, e.heading) for e in ends}
-    closest = min(offset.values())
-    pool = [e for e in ends if offset[e] <= closest + SAME_WIND_DEG]
-    end = max(pool, key=lambda e: (e.length_ft, -offset[e]))
+
+def _choice(end: RunwayEnd, wind_dir: int | None, speed: int | None, gust: int | None) -> Choice:
+    if wind_dir is None or not speed:
+        return Choice(end, 0.0, 0.0, "", None, None)
     head, cross = components(wind_dir, speed, end.heading)
     g_head = g_cross = None
     if gust:
@@ -121,11 +122,76 @@ def best(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: i
     )
 
 
+def longest(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: int | None) -> Choice | None:
+    """The longest runway, used in whichever direction is more into the wind."""
+    if not ends:
+        return None
+    top = max(e.length_ft for e in ends)
+    pool = [e for e in ends if e.length_ft == top]
+    if wind_dir is None or not speed:
+        return _choice(pool[0], None, None, None)
+    return _choice(min(pool, key=lambda e: _angle_diff(wind_dir, e.heading)), wind_dir, speed, gust)
+
+
+def best(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: int | None) -> Choice | None:
+    """The runway to use.
+
+    In light wind (LIGHT_WIND_KT or less, calm or variable included) that's
+    simply the longest. Otherwise it's the longest of the ends within
+    SAME_WIND_DEG of the most into-wind, then the better-aligned of those if
+    lengths tie. None when the wind is variable and stronger than light, or
+    there's no paved runway.
+    """
+    if not ends:
+        return None
+    if total_wind(speed, gust) <= LIGHT_WIND_KT:
+        return longest(ends, wind_dir, speed, gust)
+    if wind_dir is None:
+        return None
+    offset = {e: _angle_diff(wind_dir, e.heading) for e in ends}
+    closest = min(offset.values())
+    pool = [e for e in ends if offset[e] <= closest + SAME_WIND_DEG]
+    end = max(pool, key=lambda e: (e.length_ft, -offset[e]))
+    return _choice(end, wind_dir, speed, gust)
+
+
+def options(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: int | None) -> list[Choice]:
+    """What to show: the chosen runway, plus the longest when the wind is
+    under SHOW_LONGEST_BELOW_KT and the longest is a different runway."""
+    choice = best(ends, wind_dir, speed, gust)
+    if choice is None:
+        return []
+    out = [choice]
+    if total_wind(speed, gust) < SHOW_LONGEST_BELOW_KT:
+        long = longest(ends, wind_dir, speed, gust)
+        if long and long.end.length_ft > choice.end.length_ft:
+            out.append(long)
+    return out
+
+
 def describe(choice: Choice) -> str:
-    """"RWY 30R: headwind 8, crosswind 6 from the left (G 14)"."""
+    """"RWY 30R: headwind 8 kt, crosswind 6 kt from the left (gusts 14)"."""
+    if not choice.headwind and not choice.crosswind:
+        return f"RWY {choice.end.name}: the longest runway, as the wind is calm or light"
     head = round(choice.headwind)
     head_text = f"headwind {head}" if head >= 0 else f"tailwind {-head}"
     cross = round(choice.crosswind)
     side = f" from the {'right' if choice.cross_from == 'R' else 'left'}" if cross else ""
     gust = f" (gusts {round(choice.gust_crosswind)})" if choice.gust_crosswind is not None and cross else ""
     return f"RWY {choice.end.name}: {head_text} kt, crosswind {cross} kt{side}{gust}"
+
+
+def arrows(choice: Choice) -> str:
+    """"↓6 ←8 G16": arrows show which way the wind blows relative to the aircraft.
+
+    ↓ headwind (blowing at you), ↑ tailwind; → a crosswind from the left
+    (blowing to the right), ← one from the right, ↔ none.
+    """
+    head = round(choice.headwind)
+    cross = round(choice.crosswind)
+    head_text = f"↓{head}" if head >= 0 else f"↑{-head}"
+    cross_arrow = {"L": "→", "R": "←"}.get(choice.cross_from, "↔")
+    cross_text = f"{cross_arrow}{cross}"
+    if choice.gust_crosswind is not None and round(choice.gust_crosswind) > cross:
+        cross_text += f" G{round(choice.gust_crosswind)}"
+    return f"{head_text}  {cross_text}"

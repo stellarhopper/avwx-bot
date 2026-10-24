@@ -9,7 +9,7 @@ from .. import clock
 from ..sources.awc import Metar, Taf, TafPeriod
 from ..wx import fmt, runways
 from ..wx.runways import RunwayEnd
-from . import theme
+from . import runway_font, theme
 from .theme import BORDER, FAINT, MUTED, PANEL, PANEL_HI, TEXT, WARN, Canvas
 
 WIDTH = 600
@@ -53,7 +53,7 @@ def metar_card(
     probe = Canvas(WIDTH, 10)
     raw_lines = len(probe.wrap(m.raw, WIDTH - 2 * PAD - 20, style="mono", size=11))
     wx_strip = 34 if m.weather else 0
-    body = 190
+    body = 208
     height = 60 + body + 12 + wx_strip + (14 + 16 * raw_lines) + PAD
     c = Canvas(WIDTH, height)
     color = theme.category_color(m.flight_category)
@@ -75,12 +75,11 @@ def metar_card(
     rose_w = 196
     c.rect(PAD, top, rose_w, body, fill=PANEL, radius=10)
     _wind_rose(c, PAD + rose_w / 2, top + 78, 60, m, color, runways or [])
-    c.text(PAD + rose_w / 2, top + body - 34, fmt.wind(m.wind_dir, m.wind_speed, m.wind_gust, variable=m.wind_variable),
+    c.text(PAD + rose_w / 2, top + 160, fmt.wind(m.wind_dir, m.wind_speed, m.wind_gust, variable=m.wind_variable),
            style="semibold", size=12.5, anchor="mm")
-    note, note_color = _runway_note(m, runways or [])
-    if note:
-        c.text(PAD + rose_w / 2, top + body - 14, note, style="semibold", size=_fit(c, note, rose_w - 14, 11.5),
-               fill=note_color, anchor="mm")
+    for i, (line, line_color) in enumerate(_runway_lines(m, runways or [])):
+        c.text(PAD + rose_w / 2, top + 180 + 17 * i, line, style="semibold", size=_fit(c, line, rose_w - 14, 11.5),
+               fill=line_color, anchor="mm")
 
     # A 3×2 grid of values to its right.
     gx = PAD + rose_w + 10
@@ -124,33 +123,46 @@ def _wind_rose(c: Canvas, cx: float, cy: float, r: float, m: Metar, color, ends:
         drawn.add(pair)
         theme.runway(c, cx, cy, length * 0.92, e.heading, width=8)
     if choice:
-        # US runway markings drop a leading zero ("9"); ICAO ones keep it ("09").
-        faa = m.station[:1] in ("K", "P")
-        theme.marked_runway(c, cx, cy, length, choice.end.heading, choice.end.name, choice.end.opposite, faa=faa)
+        theme.marked_runway(c, cx, cy, length, choice.end.heading, choice.end.name, choice.end.opposite,
+                            faa=_is_faa(m.station))
     if not (m.wind_variable or calm) and m.wind_dir is not None:
         theme.arrow(c, cx, cy, r, m.wind_dir, color=color)
 
 
-def _runway_note(m: Metar, ends: list[RunwayEnd]) -> tuple[str, object]:
-    """Short components line under the rose: "30R  HW 8 · XW 6L G10"."""
+def _runway_name(name: str, station: str) -> str:
+    """As painted: US runways drop a leading zero ("3"), ICAO ones keep it ("09L")."""
+    digits, letter = runway_font.designator(name, faa=_is_faa(station))
+    return digits + letter
+
+
+def _is_faa(station: str) -> bool:
+    return station[:1] in ("K", "P")
+
+
+def _runway_lines(m: Metar, ends: list[RunwayEnd]) -> list[tuple[str, object]]:
+    """The runway lines under the rose: "Rwy 17L: ↓6  ←8", plus the longest
+    runway's when the wind is light enough for it to be a real option."""
     if not ends:
-        return "", MUTED
-    if not m.wind_speed and not m.wind_gust:
-        return "", MUTED  # the wind line above already says Calm
-    if m.wind_variable or m.wind_dir is None:
-        return f"Variable · XW up to {m.wind_gust or m.wind_speed}", WARN
-    choice = runways.best(ends, m.wind_dir, m.wind_speed, m.wind_gust)
-    if choice is None:
-        return "", MUTED
-    head = round(choice.headwind)
-    head_text = f"HW {head}" if head >= 0 else f"TW {-head}"
-    cross = round(choice.crosswind)
-    cross_text = f"XW {cross}{choice.cross_from}" if cross else "XW 0"
-    if choice.gust_crosswind is not None and round(choice.gust_crosswind) > cross:
-        cross_text += f" G{round(choice.gust_crosswind)}"
-    worst = choice.gust_crosswind if choice.gust_crosswind is not None else choice.crosswind
-    note_color = theme.DANGER if worst >= 20 or head < 0 else WARN if worst >= 12 else TEXT
-    return f"{choice.end.name}  {head_text} · {cross_text}", note_color
+        return []
+    total = runways.total_wind(m.wind_speed, m.wind_gust)
+    if m.wind_variable and total > runways.LIGHT_WIND_KT:
+        return [(f"Variable · crosswind up to {total}", WARN)]
+    picks = runways.options(ends, None if m.wind_variable else m.wind_dir, m.wind_speed, m.wind_gust)
+    if total <= runways.LIGHT_WIND_KT and picks:
+        # Light enough that the wind didn't choose: say so rather than show
+        # components of a knot or two.
+        name = _runway_name(picks[0].end.name, m.station)
+        return [(f"Rwy {name} · longest · light wind", TEXT)]
+    lines = []
+    for i, choice in enumerate(picks):
+        text = f"Rwy {_runway_name(choice.end.name, m.station)}: {runways.arrows(choice)}"
+        if i:
+            text += " · longest"
+        worst = choice.gust_crosswind if choice.gust_crosswind is not None else choice.crosswind
+        tail = round(choice.headwind) < 0
+        color = theme.DANGER if worst >= 20 or tail else WARN if worst >= 12 else (TEXT if not i else MUTED)
+        lines.append((text, color))
+    return lines
 
 
 def _fit(c: Canvas, text: str, width: float, size: float, *, style="semibold") -> float:
@@ -192,9 +204,9 @@ def metar_alt(m: Metar, units: fmt.Units, ends: list[RunwayEnd] | None = None) -
         parts.append(f"density altitude {fmt.feet(m.density_altitude_ft)}")
     if m.weather:
         parts.append(f"weather {m.weather}")
-    choice = runways.best(ends or [], None if m.wind_variable else m.wind_dir, m.wind_speed, m.wind_gust)
-    if choice:
-        parts.append(runways.describe(choice))
+    picks = runways.options(ends or [], None if m.wind_variable else m.wind_dir, m.wind_speed, m.wind_gust)
+    for i, choice in enumerate(picks):
+        parts.append(runways.describe(choice) + (" (longest runway)" if i else ""))
     return ", ".join(parts)
 
 

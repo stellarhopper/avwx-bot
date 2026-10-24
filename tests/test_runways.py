@@ -54,11 +54,38 @@ def test_best_picks_most_headwind_then_least_crosswind_then_longest():
     assert round(gusty.gust_crosswind) == 16
 
 
-def test_best_is_none_when_calm_or_variable():
+def test_light_wind_takes_the_longest_runway():
     apa = ends_for("KAPA")
-    assert runways.best(apa, None, 5, None) is None
-    assert runways.best(apa, 230, 0, None) is None
+    for wind in [(None, 0, None), (230, 0, None), (None, 3, None), (100, 2, 3)]:
+        assert runways.best(apa, *wind).end.length_ft == 10001, wind  # 17L/35R
+    # 4 kt is enough to choose by: 28 is best aligned with a 100° wind.
+    assert runways.best(apa, 280, 4, None).end.name == "28"
+
+
+def test_stronger_variable_wind_has_no_choice():
+    assert runways.best(ends_for("KAPA"), None, 5, None) is None
     assert runways.best([], 230, 10, None) is None
+
+
+def test_options_add_the_longest_in_wind_under_10_kt():
+    bjc = ends_for("KBJC")
+    names = [c.end.name for c in runways.options(bjc, 30, 6, None)]
+    assert names == ["03", "30R"]  # best aligned, then the 9,000 ft runway
+    assert [c.end.name for c in runways.options(bjc, 30, 12, None)] == ["03"]  # 10 kt+: just the best
+    assert [c.end.name for c in runways.options(bjc, 30, 6, 10)] == ["03"]  # gusts count toward the 10
+    assert len(runways.options(ends_for("KAPA"), 230, 8, None)) == 1  # best is already the longest
+
+
+def test_arrows():
+    choice = runways.best(ends_for("KAPA"), 230, 10, 20)
+    assert runways.arrows(choice) == "↓6  ←8 G16"  # crosswind from the right blows left
+    left = runways.best(ends_for("EGLL"), 210, 9, None)
+    assert runways.arrows(left) == "↓5  →8"
+    straight = runways.best(ends_for("KDEN"), 270, 18, None)
+    assert runways.arrows(straight).endswith("↔0")
+    seventeen_l = next(e for e in ends_for("KAPA") if e.name == "17L")  # 178° true
+    tail = runways._choice(seventeen_l, 358, 10, None)  # wind from straight behind
+    assert runways.arrows(tail) == "↑10  ↔0"
 
 
 def test_describe():
