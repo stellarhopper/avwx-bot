@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Privacy Policy · avwx-bot</title>
+  <meta name="description" content="Privacy Policy for avwx-bot, an aviation weather bot for Discord.">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap">
+      <h1>avwx-bot <span>Privacy Policy</span></h1>
+      <p class="muted">Effective October 30, 2026</p>
+    </div>
+  </header>
+
+  <main class="wrap legal">
+    <section class="card">
+      <p>
+        This Privacy Policy explains what information avwx-bot (the "Bot") and its configuration
+        website (together, the "Service") collect, how it is used, and how long it is kept. The Service
+        is provided by its maintainer (the "Operator", "we", "us"). It is provided as is, as described
+        in the <a href="terms.html">Terms of Service</a>, and we make no claim that this Policy is
+        complete or legally sufficient for any particular jurisdiction.
+      </p>
+
+      <h2>1. Information we collect</h2>
+      <h3>Server configuration</h3>
+      <p>
+        When a server administrator configures the Bot, we store that server's settings: its Discord
+        server ID, and the IDs of the channels and roles chosen. We keep the last 20 versions of the
+        settings, each with the Discord user ID of the person who applied it, so a change can be undone.
+      </p>
+      <h3>Records of the Bot's own posts</h3>
+      <p>
+        To avoid duplicate posts and to update its earlier ones, the Bot records which morning briefs
+        and weather alerts it has posted (by channel and message ID), and which forum threads it created
+        and the airports they cover.
+      </p>
+      <h3>Conversations with the assistant</h3>
+      <p>
+        Where a server has the conversational assistant enabled, the Bot reads and stores the messages
+        in a conversation thread while that conversation is open: the text of each message, the
+        author's display name, and when it was sent, together with the assistant's replies and the data
+        it looked up. A conversation starts when a member mentions the Bot in a channel the server has
+        chosen for it, and stays open until the thread has been quiet for the period the server sets.
+        We also record, per member and per day, how many requests each member made and their cost,
+        to enforce usage limits.
+      </p>
+      <h3>Messages we do not keep</h3>
+      <p>
+        Discord delivers messages to the Bot from channels it can see. The Bot ignores, and does not
+        store, any message that is not part of an open conversation or a mention of the Bot in a chosen
+        channel. Slash commands are processed to answer them and are not stored, apart from the
+        configuration changes described above.
+      </p>
+      <h3>Operational logs</h3>
+      <p>
+        The Bot keeps technical logs for troubleshooting. They may include server, channel, thread and
+        user IDs (for example, who changed a configuration) and error details. They do not record
+        message text.
+      </p>
+      <h3>The configuration website</h3>
+      <p>
+        The configuration website runs in your browser. Your server's settings and its channel and role
+        names travel in the part of the link after "#", which browsers do not send to the web server.
+        The site uses no cookies or analytics of its own. It is hosted on GitHub Pages, and GitHub may
+        log visits as described in its own privacy statement.
+      </p>
+
+      <h2>2. How information is used</h2>
+      <p>
+        Information is used only to provide the Service: to post briefs and alerts, to answer commands
+        and questions, to keep conversations in context, to enforce usage limits, and to diagnose
+        problems. We do not sell information, use it for advertising, or share it except as described
+        below.
+      </p>
+
+      <h2>3. Who information is shared with</h2>
+      <ul>
+        <li><strong>Discord</strong> delivers and displays all messages to and from the Bot, under
+          <a href="https://discord.com/privacy">Discord's Privacy Policy</a>.</li>
+        <li><strong>Anthropic</strong> provides the AI model behind the conversational assistant. The
+          contents of an open conversation, including members' messages and display names, are sent to
+          Anthropic's API to generate replies, and are handled under Anthropic's commercial terms and
+          <a href="https://www.anthropic.com/legal/privacy">privacy policy</a>. Nothing is sent to
+          Anthropic from servers where the assistant is not enabled.</li>
+        <li><strong>Weather data providers</strong> (aviationweather.gov and the National Weather
+          Service) receive requests for airports, locations and products. These requests do not
+          include information about Discord users.</li>
+        <li>We may disclose information if required by law.</li>
+      </ul>
+
+      <h2>4. How long information is kept</h2>
+      <ul>
+        <li>Conversations with the assistant: deleted 30 days after the conversation closes.</li>
+        <li>Records of closed weather alerts: deleted 7 days after the alert ends.</li>
+        <li>Server settings, the last 20 versions of them, records of morning briefs and created threads,
+          and usage counts: kept while the Bot is in the server.</li>
+        <li>When the Bot is removed from a server, everything stored for that server is deleted.</li>
+        <li>Operational logs: kept as long as needed for troubleshooting.</li>
+      </ul>
+
+      <h2>5. Your choices</h2>
+      <p>
+        You can avoid the conversational assistant by not mentioning the Bot and not posting in its
+        conversation threads. Server administrators can switch the assistant off, and can remove the Bot
+        from their server, which deletes the server's stored data. To ask about or request deletion of
+        information relating to you, open an issue as described below; please do not include personal
+        information in a public issue.
+      </p>
+
+      <h2>6. Children</h2>
+      <p>
+        The Service is intended for users who meet Discord's minimum age requirements. We do not
+        knowingly collect information from children under 13.
+      </p>
+
+      <h2>7. Security</h2>
+      <p>
+        Data is stored on a privately operated server with reasonable precautions, but no system is
+        completely secure and we cannot guarantee the security of any information.
+      </p>
+
+      <h2>8. Changes</h2>
+      <p>
+        We may update this Policy. The effective date above shows the latest version, and continued use
+        of the Service after a change means you accept it.
+      </p>
+
+      <h2>9. Contact</h2>
+      <p>
+        Questions about this Policy can be raised as an issue at
+        <a href="https://github.com/stellarhopper/avwx-bot/issues">github.com/stellarhopper/avwx-bot</a>.
+      </p>
+    </section>
+  </main>
+
+  <footer class="wrap muted">
+    <a href="./">Configurator</a> · <a href="terms.html">Terms of Service</a> ·
+    <a href="https://github.com/stellarhopper/avwx-bot">avwx-bot on GitHub</a>
+  </footer>
+</body>
+</html>

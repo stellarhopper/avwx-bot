@@ -103,3 +103,11 @@ footer a { color: var(--accent); }
 @media (max-width: 560px) {
   .card { padding: 14px; }
 }
+
+/* Terms of Service and Privacy Policy */
+.legal .card { line-height: 1.6; }
+.legal h2 { font-size: 17px; margin: 26px 0 6px; }
+.legal h3 { font-size: 15px; margin: 18px 0 4px; }
+.legal ul { padding-left: 22px; }
+.legal li { margin: 4px 0; }
+.legal .caps { text-transform: uppercase; font-size: 13px; letter-spacing: 0.01em; }
