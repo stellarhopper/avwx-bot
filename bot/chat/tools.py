@@ -464,7 +464,11 @@ async def takeoff_landing(ctx: ToolContext, args: dict) -> dict:
     if choice is not None:
         xwind = max(choice.crosswind, choice.gust_crosswind or 0)
         if xwind > (plane.max_demo_crosswind_kt or summary.DEFAULT_CROSSWIND_KT):
-            attention.append(f"Crosswind {round(xwind)} kt")
+            attention.append(
+                f"Crosswind {round(xwind)} kt, over the {plane.max_demo_crosswind_kt:g} kt demonstrated"
+                if plane.max_demo_crosswind_kt
+                else f"Crosswind {round(xwind)} kt, over {summary.DEFAULT_CROSSWIND_KT} kt (the POH gives no demonstrated figure)"
+            )
         if choice.headwind < -0.5:
             attention.append(f"Tailwind {round(-choice.headwind)} kt")
     if weight > plane.limits.max_takeoff_lb:

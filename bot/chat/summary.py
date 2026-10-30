@@ -115,7 +115,9 @@ def airport(o: AirportOutlook, tz, *, crosswind_limit: float | None, now: dateti
         limit = crosswind_limit or DEFAULT_CROSSWIND_KT
         worst_cross = max(o.runway.crosswind, o.runway.gust_crosswind or 0)
         if worst_cross > limit:
-            attention.append(f"{name}: crosswind {round(worst_cross)} kt, over the {limit:g} kt demonstrated")
+            basis = (f"over the {limit:g} kt demonstrated" if crosswind_limit
+                     else f"over {limit:g} kt (the POH gives no demonstrated figure)")
+            attention.append(f"{name}: crosswind {round(worst_cross)} kt, {basis}")
         if o.runway.headwind < -0.5:
             attention.append(f"{name}: tailwind {round(-o.runway.headwind)} kt on the best runway")
     if o.density_alt_ft is not None and o.elevation_ft is not None and (
