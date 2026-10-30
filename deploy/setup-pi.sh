@@ -78,6 +78,26 @@ else
     ok ".env already exists, leaving it alone"
 fi
 
+# The club chat is optional, and was added after the first release, so this
+# is asked whenever .env has no key yet rather than only on a fresh install.
+if ! grep -q '^ANTHROPIC_API_KEY=.' "$DEPLOY_DIR/.env"; then
+    read -rsp "  Anthropic API key for the club chat (Enter to skip): " akey
+    echo
+    if [ -n "$akey" ]; then
+        read -rp "  Discord server IDs allowed to use the chat (comma-separated): " chat_guilds
+        printf 'ANTHROPIC_API_KEY=%s\nCHAT_GUILD_IDS=%s\n' "$akey" "$chat_guilds" >> "$DEPLOY_DIR/.env"
+        ok "added the chat settings to .env"
+    else
+        ok "no key given; the chat stays off"
+    fi
+    unset akey
+fi
+
+# Aircraft profiles and manuals for the chat. Outside the checkout, which
+# every deployment resets; see bot/fleet.py for the layout.
+sudo install -d -o "$RUN_USER" -g "$RUN_USER" /var/lib/avwx-bot/club /var/lib/avwx-bot/club/aircraft
+ok "club files go in /var/lib/avwx-bot/club"
+
 if [ ! -f "$DEPLOY_DIR/deploy/.env.mqtt" ]; then
     echo "  MQTT broker details (the Pi's login on the EMQX deployment):"
     read -rp  "    broker host: " mqtt_broker

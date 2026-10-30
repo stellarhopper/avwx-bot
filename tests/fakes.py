@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import itertools
 import types
 
@@ -60,6 +61,10 @@ class FakeThread:
         self.sent: list[FakeMessage] = []
         self.archived = False
         self.locked = False
+        self.guild = getattr(parent, "guild", types.SimpleNamespace(id=GUILD))
+
+    def typing(self):
+        return contextlib.nullcontext()
 
     async def send(self, content=None, **kwargs) -> FakeMessage:
         msg = FakeMessage(self, content, kwargs.get("file"), kwargs.get("files"), kwargs.get("view"), kwargs.get("embed"))
@@ -93,6 +98,7 @@ class FakeChannel:
         self._perms = permissions or perms()
         self.sent: list[FakeMessage] = []
         self.threads: list[FakeThread] = []
+        self.guild = types.SimpleNamespace(id=GUILD)
 
     def permissions_for(self, member):
         return self._perms
@@ -213,3 +219,27 @@ class FakeInteraction:
     @property
     def last(self) -> dict:
         return self.record[-1][2]
+
+
+class FakeChatMessage:
+    """A member's message, as the chat cog's on_message sees it."""
+
+    def __init__(self, channel, content: str, *, author_id: int = ALICE, name: str = "Alice",
+                 mentions_bot: bool = False, bot: bool = False) -> None:
+        self.id = next(_ids)
+        self.channel = channel
+        self.guild = types.SimpleNamespace(id=GUILD)
+        self.author = types.SimpleNamespace(id=author_id, name=name.lower(), display_name=name, bot=bot)
+        self.content = ("<@999999999999999999> " if mentions_bot else "") + content
+        self.clean_content = ("@avwx-bot " if mentions_bot else "") + content
+        self.mentions = [types.SimpleNamespace(id=BOT_USER)] if mentions_bot else []
+        self.webhook_id = None
+        self.attachments = []
+        from datetime import datetime, timezone
+
+        self.created_at = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc)
+
+    async def create_thread(self, *, name, auto_archive_duration=None):
+        thread = FakeThread(self.channel, name)
+        self.channel.threads.append(thread)
+        return thread

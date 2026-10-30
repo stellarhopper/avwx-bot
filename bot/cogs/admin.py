@@ -22,8 +22,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from .. import guildcfg, perms, posting, regions
+from .. import clock, guildcfg, perms, posting, regions
 from ..sources.http import SourceError
+from ..wx import fmt
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,7 @@ FEATURES = {
     "pirep-command": ("commands", "pirep"),
     "mountain-command": ("commands", "mountain"),
     "alerts-command": ("commands", "alerts"),
+    "chat": ("chat", "enabled"),
 }
 FEATURE_CHOICES = [
     app_commands.Choice(name="Morning brief (automatic post)", value="morning-brief"),
@@ -55,6 +57,7 @@ FEATURE_CHOICES = [
     app_commands.Choice(name="/pirep", value="pirep-command"),
     app_commands.Choice(name="/mountain", value="mountain-command"),
     app_commands.Choice(name="/alerts", value="alerts-command"),
+    app_commands.Choice(name="Chat with Claude", value="chat"),
 ]
 
 
@@ -369,6 +372,14 @@ class Admin(commands.Cog):
             f"Posted to {where}. Today's scheduled brief will still go out as normal.", ephemeral=True
         )
 
+    @avwx.command(name="chat-status", description="Chat: whether it's running here, what it has cost, and the aircraft")
+    async def chat_status(self, interaction: discord.Interaction) -> None:
+        if not await perms.require_admin(self.bot.store, interaction):
+            return
+        await interaction.response.send_message(
+            chat_status_text(self.bot, interaction.guild_id), ephemeral=True
+        )
+
     @commands.Cog.listener()
     async def on_guild_remove(self, guild: discord.Guild) -> None:
         log.info("removed from guild %s; forgetting its data", guild.id)
@@ -400,9 +411,38 @@ def summary(stored: dict | None) -> str:
            if alerts.get("channel_id") else ""),
         f"**Mountain flying:** {_onoff(mountain['enabled'])}"
         + (f" — {mountain['region']}" if mountain["enabled"] else ""),
+        f"**Chat:** {_onoff(eff['chat']['enabled'])}"
+        + (f" — in {', '.join(f'<#{c}>' for c in eff['chat'].get('channel_ids', []))}"
+           if eff["chat"].get("channel_ids") else ""),
     ]
     return "\n".join(line for line in lines if line)
 
 
 async def setup(bot) -> None:
     await bot.add_cog(Admin(bot))
+
+
+def chat_status_text(bot, guild_id: int) -> str:
+    eff = guildcfg.effective(bot.store.get_config(guild_id))
+    chat = eff["chat"]
+    if bot.claude is None:
+        host = "**not running on this host** (no ANTHROPIC_API_KEY, or CHAT_GUILD_IDS is empty)"
+    elif guild_id not in bot.config.chat_guild_ids:
+        host = "**not allowed for this server** by the host (CHAT_GUILD_IDS)"
+    else:
+        host = "allowed"
+    tz = fmt.zone(eff.get("timezone"))
+    today = clock.now().astimezone(tz).date()
+    day = bot.store.chat_usage(guild_id, today.isoformat())
+    month = bot.store.chat_usage(guild_id, today.replace(day=1).isoformat(), today.isoformat())
+    club = bot.fleet.get()
+    lines = [
+        f"**Chat:** {_onoff(chat['enabled'])} here; {host}",
+        f"**Today:** {day.requests} requests, ${day.cost_usd:.2f} of the ${float(chat['daily_usd_cap']):.2f} cap",
+        f"**This month:** {month.requests} requests, ${month.cost_usd:.2f}",
+        f"**Aircraft:** {', '.join(f'{a.tail} ({a.type})' for a in club.aircraft.values()) or 'none'}"
+        f" from `{bot.config.club_dir}`",
+    ]
+    for problem in club.problems:
+        lines.append(f"⚠️ {problem[:300]}")
+    return "\n".join(lines)

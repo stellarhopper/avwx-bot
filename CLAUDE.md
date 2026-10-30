@@ -28,6 +28,28 @@ the layout.
   than inventing one.
 - Comments explain *why*, the same as in the sibling repos.
 
+## Club chat (`bot/chat/`)
+
+- Claude never produces a number. Positions, winds, times, fuel, W&B and
+  performance all come from tools backed by tested code (`route.py`,
+  `flightwx.py`, `bot/wx/navlog.py`, `wb.py`, `perf.py`). A new capability is a
+  new tool, not a prompt instruction to calculate.
+- Every tool is read-only and reaches only fixed sources. Don't add one that
+  fetches arbitrary URLs, reads arbitrary paths, or posts anywhere: that is what
+  keeps prompt injection harmless. Re-validate inputs in code even though the
+  schemas are strict.
+- Each tool result carries an `attention` list decided in code
+  (`bot/chat/summary.py`). Replies lead with it and stay brief, because members
+  still get a full briefing elsewhere.
+- Conversation history is append-only and replayed byte for byte. Thinking
+  blocks are only valid in the exact conversation that produced them, so never
+  edit, reorder or trim stored messages. A tool call and its results are stored
+  together.
+- Aircraft profiles never get default values. A missing number rejects the
+  profile. Performance lookups never extrapolate past a table.
+- `tests/fakeclaude.py` scripts API responses. `scripts/chat_smoke.py` hits the
+  real API and costs money: run it only by hand.
+
 ## Commands
 
 ```bash
@@ -39,5 +61,5 @@ python scripts/build_site.py && python -m http.server -d _site 8000
 ## Secrets
 
 `~/.emqx-logins.env` holds broker passwords. Never read it. The Discord token
-is in `.env` (gitignored), and the Pi's MQTT login is in `deploy/.env.mqtt`
-(gitignored).
+and the Anthropic API key are in `.env` (gitignored), and the Pi's MQTT login
+is in `deploy/.env.mqtt` (gitignored).

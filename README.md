@@ -34,6 +34,7 @@ Hazards, alerts and the mountain features cover the US.
 | `/avwx config rollback` | Go back to the previous settings |
 | `/avwx enable` / `disable` | Switch one feature on or off |
 | `/avwx post-brief` | Post the morning brief now, to check the channel. Today's scheduled brief still goes out |
+| `/avwx chat-status` | Whether the club chat runs here, what it has cost today and this month, and which aircraft it knows |
 
 **Which airports a command uses:** the ones you type. If you type none, it uses
 the airports of the brief or alert thread you're in. Failing that, it uses the
@@ -128,6 +129,77 @@ To keep the commands to a dedicated bot channel, go to **Server Settings →
 Integrations → avwx-bot** and set channel permissions there. That's Discord's own
 control, so it applies before the bot ever sees the command.
 
+## Club chat
+
+A flying club can talk to the bot about flights. @mention it in a chat channel:
+
+> @avwx-bot KBJC, Rollins pass, Granby, Kremmling, SBS, KBJC tomorrow at 8 in
+> N648F, landing at Granby and Steamboat. Max gross. What should I know?
+
+In a text channel the bot opens a thread on that message. In an existing thread,
+such as the morning brief's forum post, it answers in place. After that it
+answers every message in the thread without being mentioned, until the thread
+has been quiet for a few hours (`chat.idle_hours`). A new @mention picks it up
+again.
+
+The answers come from Claude, but **the numbers come from the bot's own code**.
+Claude only works out what's being asked and calls the bot's tools:
+
+- **Route:** turns identifiers, fixes, pass names and town names into points.
+  "Granby" between two Colorado airports is Granby, CO. When a name could mean
+  two places, the bot asks.
+- **Plan:** a nav log (courses, wind correction, ground speed, times, fuel per
+  flight with the club's reserve), weather at each airport at its arrival time,
+  hazards and alerts along the route, notable PIREPs, and any pass crossed.
+- **Weight and balance**, and **takeoff and landing distances** from the POH
+  tables in the aircraft's profile. Past the edge of a table, the result is
+  marked as a lower bound rather than extrapolated.
+- **Manuals:** search, and read pages, including scanned ones.
+
+Members still get a proper briefing, so replies are short. They lead with what's
+outside normal parameters (IFR at arrival, a crosswind over the demonstrated
+limit, a pass at caution, short fuel) and summarise the rest in a few lines.
+
+It sticks to flying and the club. Member messages and tool results are treated
+as information, never instructions. Every tool is read-only, with no web access
+and no way to post anywhere, so injected text has nothing to reach.
+
+**Setting it up:**
+
+1. Put `ANTHROPIC_API_KEY` and `CHAT_GUILD_IDS` in `.env`. Only the listed
+   servers can use the chat, since every answer costs API credit.
+2. Turn on **Message Content Intent** under Bot in the Developer Portal. Under
+   100 servers, it's just a toggle. While you're there, turn off **Public Bot**
+   so only you can add it to servers.
+3. In the configurator, switch **Chat with Claude** on and pick the channels.
+   Daily caps per member and per server are there too.
+4. Add the aircraft (below). `/avwx chat-status` shows what loaded.
+
+### Aircraft profiles
+
+Each aircraft is a directory under `CLUB_DIR` (on the Pi,
+`/var/lib/avwx-bot/club`), outside the checkout because deployment resets it:
+
+```
+club/
+  club.toml                    name, reserve_minutes, rules
+  aircraft/N648F/
+    aircraft.toml              the profile
+    manuals/poh.pdf, ...       POH, supplements, avionics guides
+```
+
+`aircraft.toml` holds the empty weight and arm, weight limits, loading
+stations, usable fuel, the CG envelope, V-speeds, cruise TAS and fuel flow by
+altitude and power, the performance tables, and a list of manuals with a
+section-to-page index. Copy every number from the aircraft's own documents and
+have someone check them. A profile with a missing value is rejected, not
+guessed at, and `/avwx chat-status` says why.
+[`tests/fixtures/club/`](tests/fixtures/club/) has a complete example, with
+made-up numbers. A performance table is a grid over whichever axes the POH
+uses (`weight_lb`, `pressure_alt_ft`, `temp_c`, `headwind_kt`), plus
+corrections such as "10% per 25 °F above standard". Changes are picked up
+without a restart.
+
 ## Adding the bot to a server
 
 Create an application at <https://discord.com/developers/applications>, add a
@@ -140,8 +212,14 @@ bot, and invite it with:
   - Mention @everyone, @here and All Roles, if alerts should ping a role that
     isn't otherwise mentionable
   - Manage Threads, to lock expired alert posts in a forum
+  - Create Public Threads, for the club chat in text channels
 
-No privileged intents are needed.
+The club chat needs the **Message Content** privileged intent, because members
+reply in a chat thread without @mentioning the bot. The bot asks for it only when
+`ANTHROPIC_API_KEY` and `CHAT_GUILD_IDS` are set. Discord refuses to connect a
+bot that asks for an intent that isn't switched on in the Developer Portal, so
+switch it on there before setting those. The bot reads nothing outside an open
+chat thread.
 
 ## Running it
 
@@ -184,7 +262,11 @@ restart, and a failure rolls back. See [`deploy/README.md`](deploy/README.md).
 | `bot/render/` | Pillow cards. Each returns PNG bytes |
 | `bot/cogs/` | The slash commands and background loops |
 | `bot/guildcfg.py` | Config validation, defaults, diffs and the link format |
+| `bot/route.py`, `bot/flightwx.py` | Route resolution, and the weather for a planned flight |
+| `bot/fleet.py` | Loading the club's aircraft profiles |
+| `bot/chat/` | The club chat: system prompt, tools, and the conversation loop |
 | `schema/` | The config schema, shared by the bot and the site |
 | `data/regions/` | Regional data such as mountain passes and winds-aloft sites. One JSON file per region |
+| `data/airports_us.json` | Public-use US airports by name and town, for routes like "Granby". Rebuilt by `scripts/airports.py` |
 | `site/` | The configurator. Plain HTML and JS, no build step |
 | `deploy/` | Pi setup, systemd units and the MQTT deployer |

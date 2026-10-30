@@ -71,6 +71,33 @@ def database_path() -> Path:
     return ROOT / "data" / "avwx.db"
 
 
+def club_path() -> Path:
+    """CLUB_DIR if set; else beside the database in systemd's state directory;
+    else data/club in the checkout. Same reasoning as database_path: on the Pi
+    the club's files must not live in the checkout that deployment resets."""
+    raw = os.environ.get("CLUB_DIR", "").strip()
+    if raw:
+        return Path(raw)
+    state = os.environ.get("STATE_DIRECTORY", "").split(":")[0].strip()
+    if state:
+        return Path(state) / "club"
+    return ROOT / "data" / "club"
+
+
+def _id_set(name: str) -> frozenset[int]:
+    raw = os.environ.get(name, "")
+    out = set()
+    for part in raw.replace(",", " ").split():
+        try:
+            out.add(int(part))
+        except ValueError:
+            raise SystemExit(f"{name} must be a list of server IDs, got {part!r}") from None
+    return frozenset(out)
+
+
+EFFORTS = ("low", "medium", "high", "xhigh", "max")
+
+
 class Config:
     """Snapshot of the environment, read once at startup."""
 
@@ -82,6 +109,14 @@ class Config:
         self.user_agent = (
             os.environ.get("HTTP_USER_AGENT", "").strip() or DEFAULT_USER_AGENT
         )
+        # The club chat spends this host's Anthropic credit, so it only runs on
+        # servers listed here, whatever a server's own config says.
+        self.anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip() or None
+        self.chat_guild_ids = _id_set("CHAT_GUILD_IDS")
+        self.club_dir = club_path()
+        self.chat_effort = os.environ.get("CHAT_EFFORT", "").strip() or "medium"
+        if self.chat_effort not in EFFORTS:
+            raise SystemExit(f"CHAT_EFFORT must be one of {', '.join(EFFORTS)}, got {self.chat_effort!r}")
 
     def require_token(self) -> str:
         if not self.token:
