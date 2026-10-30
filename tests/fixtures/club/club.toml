@@ -1,0 +1,7 @@
+# Test club. Not real data.
+name = "Test Flying Club"
+reserve_minutes = 45
+rules = """
+Mountain flights need a club mountain checkout.
+Day VFR fuel reserve is 45 minutes.
+"""

@@ -1,0 +1,152 @@
+# TEST NUMBERS ONLY. NOT FOR FLIGHT.
+# The tables have the shape of a 1964 Cessna 182G Owner's Manual (weight ×
+# headwind × altitude at standard temperature, ending at 7,500 ft), but the
+# values are made up for the tests.
+tail = "N9999X"
+type = "Cessna 182G"
+year = 1964
+fuel_type = "100LL"
+equipment = ["Garmin GI 275 (x3)", "Garmin GTN 650Xi WAAS", "Garmin GFC 500 autopilot"]
+notes = "Test aircraft."
+service_ceiling_ft = 18900
+default_power_pct = 65
+
+[weights]
+empty_lb = 1780
+empty_arm = 36.0
+max_ramp_lb = 2810
+max_takeoff_lb = 2800
+max_landing_lb = 2800
+
+[fuel]
+usable_gal = 60
+arm = 48.0
+lb_per_gal = 6.0
+taxi_gal = 1.5
+climb_gal_per_1000ft = 0.4
+
+[[stations]]
+id = "front"
+name = "Pilot and front passenger"
+arm = 36.0
+
+[[stations]]
+id = "rear"
+name = "Rear passengers"
+arm = 70.0
+
+[[stations]]
+id = "baggage"
+name = "Baggage"
+arm = 95.0
+max_lb = 120
+
+[envelope]
+points = [[33.0, 1600], [33.0, 2250], [39.5, 2800], [47.3, 2800], [47.3, 1600]]
+
+[speeds]
+vr = 55
+vx = 61
+vy = 80
+va = 109
+vfe = 95
+vno = 139
+vne = 167
+vs0 = 50
+max_demo_crosswind_kt = 15
+
+[[cruise]]
+pressure_alt_ft = 2000
+power_pct = 65
+tas_kt = 128
+gph = 11.0
+
+[[cruise]]
+pressure_alt_ft = 6000
+power_pct = 65
+tas_kt = 133
+gph = 11.0
+
+[[cruise]]
+pressure_alt_ft = 10000
+power_pct = 65
+tas_kt = 137
+gph = 11.0
+
+[[cruise]]
+pressure_alt_ft = 4000
+power_pct = 75
+tas_kt = 141
+gph = 12.8
+
+[[performance]]
+name = "takeoff"
+conditions = "Hard surface, flaps 20°, standard temperature"
+units = "ft"
+axes = ["weight_lb", "headwind_kt", "pressure_alt_ft"]
+[performance.breakpoints]
+weight_lb = [2000, 2400, 2800]
+headwind_kt = [0, 10, 20]
+pressure_alt_ft = [0, 2500, 5000, 7500]
+[performance.outputs]
+ground_roll = [
+  [[340, 400, 470, 560], [225, 265, 315, 380], [130, 160, 195, 240]],
+  [[500, 590, 700, 840], [345, 410, 490, 600], [215, 260, 320, 395]],
+  [[705, 835, 1000, 1210], [500, 600, 730, 890], [325, 395, 485, 600]],
+]
+over_50ft = [
+  [[740, 860, 1000, 1180], [530, 620, 725, 860], [350, 410, 485, 580]],
+  [[1005, 1175, 1380, 1650], [745, 880, 1040, 1250], [515, 615, 735, 895]],
+  [[1350, 1590, 1900, 2310], [1025, 1225, 1475, 1800], [730, 890, 1090, 1350]],
+]
+[[performance.corrections]]
+kind = "temp_above_standard"
+percent = 10
+per = 25
+note = "10% per 25°F above standard"
+[[performance.corrections]]
+kind = "grass"
+percent = 7
+of = "over_50ft"
+note = "dry grass: add 7% of the over-50-ft figure"
+
+[[performance]]
+name = "landing"
+conditions = "Hard surface, flaps 40°, power off, standard temperature, 2800 lb"
+units = "ft"
+axes = ["headwind_kt", "pressure_alt_ft"]
+[performance.breakpoints]
+headwind_kt = [0, 10, 20]
+pressure_alt_ft = [0, 2500, 5000, 7500]
+[performance.outputs]
+ground_roll = [[590, 640, 690, 745], [425, 465, 505, 545], [270, 295, 325, 355]]
+over_50ft = [[1350, 1430, 1520, 1615], [1060, 1130, 1200, 1280], [780, 830, 890, 950]]
+[[performance.corrections]]
+kind = "temp_above_standard"
+percent = 10
+per = 60
+[[performance.corrections]]
+kind = "grass"
+percent = 20
+of = "over_50ft"
+
+[[performance]]
+name = "climb"
+conditions = "Flaps up, full throttle, standard temperature"
+units = "fpm"
+axes = ["weight_lb", "pressure_alt_ft"]
+[performance.breakpoints]
+weight_lb = [2000, 2400, 2800]
+pressure_alt_ft = [0, 2500, 5000, 7500]
+[performance.outputs]
+rate_of_climb = [[1385, 1240, 1095, 950], [1130, 1000, 870, 745], [920, 805, 690, 575]]
+
+[[manuals]]
+id = "poh"
+title = "Owner's Manual (test)"
+kind = "poh"
+file = "poh.pdf"
+[manuals.sections]
+"Emergency procedures" = "2"
+"Normal procedures" = "1"
+"Performance" = "3"
