@@ -22,6 +22,14 @@ TTL_AFD_LIST = 600
 TTL_AFD = 3600
 TTL_ZONE = 24 * 3600
 TTL_POINT = 7 * 24 * 3600
+TTL_HOURLY = 1800
+
+# The hourly forecast gives wind as a compass point and "10 mph" or "5 to 10 mph".
+_COMPASS = {d: i * 22.5 for i, d in enumerate(
+    "N NNE NE ENE E ESE SE SSE S SSW SW WSW W WNW NW NNW".split()
+)}
+_MPH = re.compile(r"(\d+)\s*mph")
+KT_PER_MPH = 0.868976
 
 _SECTION = re.compile(r"^\.([A-Z][A-Z /]+?)(?:\s*/[^\n]*?)?\.\.\.", re.MULTILINE)
 
@@ -148,6 +156,46 @@ class Discussion:
         return aviation_section(self.text)
 
 
+@dataclass(frozen=True, slots=True)
+class HourlyPeriod:
+    """One hour of the NWS gridpoint forecast. Covers airports without a TAF,
+    and times past the end of one."""
+
+    start: datetime
+    end: datetime
+    temp_c: float | None
+    dewpoint_c: float | None
+    wind_dir: float | None  # degrees true, from a 16-point compass
+    wind_kt: int | None  # the upper figure when given as a range
+    precip_pct: int | None
+    summary: str
+
+    @classmethod
+    def from_api(cls, d: dict) -> "HourlyPeriod | None":
+        start, end = _iso(d.get("startTime")), _iso(d.get("endTime"))
+        if start is None or end is None:
+            return None
+        temp = d.get("temperature")
+        if isinstance(temp, dict):
+            temp = temp.get("value")
+        if temp is not None and d.get("temperatureUnit", "F") == "F":
+            temp = (temp - 32) * 5 / 9
+        dew = (d.get("dewpoint") or {}).get("value")
+        speeds = [int(m) for m in _MPH.findall(d.get("windSpeed") or "")]
+        if not speeds and str(d.get("windSpeed", "")).strip().isdigit():
+            speeds = [int(d["windSpeed"])]
+        return cls(
+            start=start,
+            end=end,
+            temp_c=round(temp, 1) if temp is not None else None,
+            dewpoint_c=round(dew, 1) if dew is not None else None,
+            wind_dir=_COMPASS.get(str(d.get("windDirection") or "").upper()),
+            wind_kt=round(max(speeds) * KT_PER_MPH) if speeds else None,
+            precip_pct=(d.get("probabilityOfPrecipitation") or {}).get("value"),
+            summary=d.get("shortForecast") or "",
+        )
+
+
 class Nws:
     def __init__(self, http: Http) -> None:
         self.http = http
@@ -169,6 +217,16 @@ class Nws:
         # More than four decimal places gets a redirect; fewer keeps the cache key stable.
         data = await self.http.get_json(f"{BASE}/points/{lat:.4f},{lon:.4f}", ttl=TTL_POINT, accept=GEOJSON)
         return ((data or {}).get("properties") or {}).get("cwa")
+
+    async def hourly(self, lat: float, lon: float) -> list[HourlyPeriod]:
+        """The gridpoint hourly forecast for a point, about a week ahead."""
+        point = await self.http.get_json(f"{BASE}/points/{lat:.4f},{lon:.4f}", ttl=TTL_POINT, accept=GEOJSON)
+        url = ((point or {}).get("properties") or {}).get("forecastHourly")
+        if not url or not url.startswith(BASE):
+            return []
+        data = await self.http.get_json(url, ttl=TTL_HOURLY, accept=GEOJSON)
+        periods = ((data or {}).get("properties") or {}).get("periods") or []
+        return [p for p in (HourlyPeriod.from_api(d) for d in periods) if p is not None]
 
     async def discussion(self, office: str) -> Discussion | None:
         listing = await self.http.get_json(

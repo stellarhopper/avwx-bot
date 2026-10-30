@@ -20,6 +20,7 @@ Each group is DDSS[±TT]:
 
 from __future__ import annotations
 
+import math
 import re
 from dataclasses import dataclass, field
 
@@ -109,3 +110,42 @@ def parse(text: str) -> Forecast:
             if wind is not None:
                 levels[altitude] = wind
     return forecast
+
+
+def interpolate(levels: dict[int, Wind], altitude_ft: float) -> Wind | None:
+    """The wind at an altitude between two forecast levels.
+
+    Interpolated as a vector, not as direction and speed separately, so a wind
+    backing from 350° to 010° between levels passes through north instead of
+    swinging round through south. Below the lowest level reported (the FB
+    leaves out levels close to the station) the lowest level stands in; there's
+    nothing better to go on. Above the highest, None.
+    """
+    known = sorted(levels.items())
+    if not known or altitude_ft > known[-1][0]:
+        return None
+    if altitude_ft <= known[0][0]:
+        return known[0][1]
+    for (lo_alt, lo), (hi_alt, hi) in zip(known, known[1:]):
+        if lo_alt <= altitude_ft <= hi_alt:
+            f = (altitude_ft - lo_alt) / (hi_alt - lo_alt)
+            u = _u(lo) + f * (_u(hi) - _u(lo))
+            v = _v(lo) + f * (_v(hi) - _v(lo))
+            speed = math.hypot(u, v)
+            temp = None
+            if lo.temp_c is not None and hi.temp_c is not None:
+                temp = round(lo.temp_c + f * (hi.temp_c - lo.temp_c))
+            if speed < 0.5:
+                return Wind(round(altitude_ft), None, 0, temp)
+            direction = round(math.degrees(math.atan2(u, v))) % 360 or 360
+            return Wind(round(altitude_ft), direction, round(speed), temp)
+    return None
+
+
+def _u(w: Wind) -> float:
+    """East component of the direction the wind blows *from*."""
+    return 0.0 if w.direction is None else w.speed_kt * math.sin(math.radians(w.direction))
+
+
+def _v(w: Wind) -> float:
+    return 0.0 if w.direction is None else w.speed_kt * math.cos(math.radians(w.direction))

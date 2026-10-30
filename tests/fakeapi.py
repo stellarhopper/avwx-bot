@@ -46,6 +46,9 @@ class FixtureHttp(Http):
         if product == "airport":
             ids = set(params.get("ids", "").split(","))
             return 200, json.dumps([d for d in fixture_json("airport.json") if d["icaoId"] in ids])
+        if product in ("fix", "navaid"):
+            ids = set(params.get("ids", "").split(","))
+            return 200, json.dumps([d for d in fixture_json(f"{product}.json") if d["id"] in ids])
         if product == "pirep":
             return 200, fixture_text("pirep.json")
         if product == "airsigmet":
@@ -60,7 +63,11 @@ class FixtureHttp(Http):
         if product == "alerts":
             return 200, fixture_text("nws_alerts_co.json")
         if product == "points":
-            return 200, json.dumps({"properties": {"cwa": "BOU"}})
+            # Every point is Granby's grid cell: forecast office BOU, which is
+            # also right for everything else the fixtures cover.
+            return 200, fixture_text("nws_points_gnb.json")
+        if product == "hourly":
+            return 200, fixture_text("nws_hourly_gnb.json")
         if product == "afd_list":
             return 200, json.dumps({"@graph": [{"id": "afd-1"}]})
         if product == "product":
@@ -80,6 +87,8 @@ def all_metars() -> list[dict]:
 def _nws_product(url: str) -> str:
     if "/alerts/active" in url:
         return "alerts"
+    if url.endswith("/forecast/hourly"):
+        return "hourly"
     if "/points/" in url:
         return "points"
     if "/products/types/AFD" in url:

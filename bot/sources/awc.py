@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from .. import clock
 from ..wx import flightcat
 from ..wx.density_alt import FT_PER_M, density_altitude, hpa_to_inhg
-from ..wx.runways import RunwayEnd, runway_ends
+from ..wx.runways import RunwayEnd, magnetic_variation, runway_ends
 from . import windsaloft
 from .http import Http
 
@@ -36,6 +36,7 @@ TTL_SIGMET = 300
 TTL_GAIRMET = 900
 TTL_CWA = 300
 TTL_WINDS = 1800
+TTL_FIX = 24 * 3600
 
 # AWC accepts a comma list of IDs; keep each request modest.
 ID_CHUNK = 20
@@ -262,6 +263,33 @@ class Station:
 
 
 @dataclass(frozen=True, slots=True)
+class AirportInfo:
+    icao: str
+    name: str
+    lat: float
+    lon: float
+    elevation_ft: float
+    magvar: float  # degrees, east positive
+    runways: list[RunwayEnd]  # paved ends only, true headings
+
+
+@dataclass(frozen=True, slots=True)
+class Navpoint:
+    """An FAA fix (VPROL) or a navaid (BJC VOR/DME)."""
+
+    ident: str
+    kind: str  # "fix", or the navaid type such as "VOR/DME"
+    name: str
+    lat: float
+    lon: float
+    magvar: float | None  # navaids only
+
+    @property
+    def position(self) -> tuple[float, float]:
+        return (self.lat, self.lon)
+
+
+@dataclass(frozen=True, slots=True)
 class Pirep:
     raw: str
     observed: datetime | None
@@ -453,6 +481,53 @@ class Awc:
                 ends = runway_ends(d.get("runways") or [], d.get("magdec"))
                 if d.get("icaoId") and ends:
                     out[d["icaoId"]] = ends
+        return out
+
+    async def airports(self, ids: Iterable[str]) -> dict[str, AirportInfo]:
+        """Position, variation and paved runways. Same request as runways(), so
+        asking for both costs one fetch."""
+        wanted = sorted({i.upper() for i in ids})
+        out: dict[str, AirportInfo] = {}
+        for chunk in _chunks(wanted):
+            for d in await self._get("airport", {"ids": ",".join(chunk)}, TTL_AIRPORT) or []:
+                lat, lon = _float(d.get("lat")), _float(d.get("lon"))
+                if not d.get("icaoId") or lat is None or lon is None:
+                    continue
+                out[d["icaoId"]] = AirportInfo(
+                    icao=d["icaoId"],
+                    name=(d.get("name") or "").strip(),
+                    lat=lat,
+                    lon=lon,
+                    elevation_ft=(_float(d.get("elev")) or 0) * FT_PER_M,
+                    magvar=magnetic_variation(d.get("magdec")),
+                    runways=runway_ends(d.get("runways") or [], d.get("magdec")),
+                )
+        return out
+
+    async def fixes(self, ids: Iterable[str]) -> dict[str, Navpoint]:
+        wanted = sorted({i.upper() for i in ids})
+        out: dict[str, Navpoint] = {}
+        for chunk in _chunks(wanted):
+            for d in await self._get("fix", {"ids": ",".join(chunk)}, TTL_FIX) or []:
+                lat, lon = _float(d.get("lat")), _float(d.get("lon"))
+                if d.get("id") and lat is not None and lon is not None:
+                    out[d["id"]] = Navpoint(d["id"], "fix", "", lat, lon, None)
+        return out
+
+    async def navaids(self, ids: Iterable[str]) -> dict[str, Navpoint]:
+        """US navaids only: identifiers repeat across countries, and a route
+        planned here never means the Danish one."""
+        wanted = sorted({i.upper() for i in ids})
+        out: dict[str, Navpoint] = {}
+        for chunk in _chunks(wanted):
+            for d in await self._get("navaid", {"ids": ",".join(chunk)}, TTL_FIX) or []:
+                lat, lon = _float(d.get("lat")), _float(d.get("lon"))
+                if not d.get("id") or lat is None or lon is None or d.get("country") not in (None, "US"):
+                    continue
+                out[d["id"]] = Navpoint(
+                    d["id"], d.get("type") or "navaid", (d.get("name") or "").strip(), lat, lon,
+                    magnetic_variation(d.get("mag_dec")),
+                )
         return out
 
     async def pireps(self, near: str, distance_nm: int = 100, age_hours: int = 3) -> list[Pirep]:

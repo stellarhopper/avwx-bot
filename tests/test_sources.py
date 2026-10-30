@@ -109,3 +109,26 @@ async def test_http_errors_are_source_errors_and_not_cached():
 async def test_http_204_is_none():
     http = FakeHttp({"https://x/a": (204, "")})
     assert await http.get_json("https://x/a", ttl=60) is None
+
+
+async def test_fixes_navaids_and_airport_details():
+    from fakeapi import clients
+
+    c = clients()
+    fixes = await c.awc.fixes(["VPROL", "NOPE1"])
+    assert list(fixes) == ["VPROL"] and fixes["VPROL"].kind == "fix"
+    navaids = await c.awc.navaids(["BJC"])
+    assert navaids["BJC"].kind == "VOR/DME" and navaids["BJC"].magvar == 11
+    info = (await c.awc.airports(["K20V"]))["K20V"]
+    assert info.magvar == 9 and 7400 < info.elevation_ft < 7420
+    assert {e.name for e in info.runways} == {"09", "27"}
+
+
+async def test_nws_hourly_forecast():
+    from fakeapi import clients
+
+    hours = await clients().nws.hourly(40.0897, -105.917)
+    assert len(hours) == 48
+    first = hours[0]
+    assert first.temp_c == 0.6 and first.wind_dir == 90 and first.wind_kt == 3
+    assert first.end - first.start == (hours[1].start - first.start)
