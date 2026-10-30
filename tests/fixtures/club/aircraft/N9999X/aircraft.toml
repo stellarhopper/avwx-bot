@@ -41,6 +41,11 @@ name = "Baggage"
 arm = 95.0
 max_lb = 120
 
+[[fixed]]
+name = "Engine oil, 12 qt"
+lb = 22
+arm = -15.0
+
 [envelope]
 points = [[33.0, 1600], [33.0, 2250], [39.5, 2800], [47.3, 2800], [47.3, 1600]]
 
@@ -57,27 +62,39 @@ max_demo_crosswind_kt = 15
 
 [[cruise]]
 pressure_alt_ft = 2000
-power_pct = 65
-tas_kt = 128
-gph = 11.0
+power_pct = 60
+tas_kt = 124
+gph = 10.4
+
+[[cruise]]
+pressure_alt_ft = 2000
+power_pct = 70
+tas_kt = 132
+gph = 11.6
 
 [[cruise]]
 pressure_alt_ft = 6000
-power_pct = 65
-tas_kt = 133
-gph = 11.0
+power_pct = 60
+tas_kt = 128
+gph = 10.4
+
+[[cruise]]
+pressure_alt_ft = 6000
+power_pct = 70
+tas_kt = 137
+gph = 11.6
 
 [[cruise]]
 pressure_alt_ft = 10000
-power_pct = 65
-tas_kt = 137
-gph = 11.0
+power_pct = 55
+tas_kt = 128
+gph = 9.6
 
 [[cruise]]
-pressure_alt_ft = 4000
-power_pct = 75
-tas_kt = 141
-gph = 12.8
+pressure_alt_ft = 10000
+power_pct = 63
+tas_kt = 135
+gph = 10.6
 
 [[performance]]
 name = "takeoff"

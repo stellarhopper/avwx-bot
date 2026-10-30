@@ -82,3 +82,11 @@ def test_shape_is_checked():
     bad = perf.Table("t", "", ("weight_lb",), {"weight_lb": (1.0, 2.0)}, {"x": [1]}, "ft")
     with pytest.raises(perf.PerfError, match="expected 2 entries"):
         perf.check_shape(bad)
+
+
+def test_grass_without_a_grass_rule_is_a_lower_bound():
+    r = perf.lookup(LANDING, headwind_kt=0, pressure_alt_ft=0, temp_c=15, grass=1)
+    assert not r.lower_bound  # this table has a grass rule
+    table = perf.Table("t", "", ("pressure_alt_ft",), {"pressure_alt_ft": (0.0, 1000.0)}, {"x": [1, 2]}, "ft")
+    r = perf.lookup(table, pressure_alt_ft=0, grass=1)
+    assert r.lower_bound and "hard surface" in r.warnings[0]

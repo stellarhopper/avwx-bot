@@ -29,12 +29,13 @@ def test_loads_the_club_and_its_plane():
     assert plane.max_demo_crosswind_kt == 15
 
 
-def test_cruise_interpolates_and_says_when_it_clamps():
+def test_cruise_interpolates_by_power_then_altitude():
     plane = fleet.load(CLUB).get("N9999X")
-    assert plane.cruise_at(4000)[:2] == (130.5, 11.0)
-    assert "highest row" in plane.cruise_at(12000)[2]
-    tas, gph, note = plane.cruise_at(4000, 75)
-    assert (tas, gph) == (141, 12.8) and note == "75% power"
+    assert plane.cruise_at(2000) == (128.0, 11.0, "65% power")
+    assert plane.cruise_at(4000)[:2] == (130.2, 11.0)
+    tas, gph, note = plane.cruise_at(10000, 65)
+    assert (tas, gph) == (135.0, 10.6) and "63% is the most the table gives at 10,000 ft" in note
+    assert "highest table altitude" in plane.cruise_at(12000)[2]
 
 
 def test_a_missing_value_rejects_the_profile_and_names_it(tmp_path):

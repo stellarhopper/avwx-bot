@@ -11,8 +11,8 @@ LIMITS = PLANE.limits
 
 def test_normal_loading_by_hand():
     load = wb.compute(LIMITS, {"front": 380, "baggage": 50}, 60, taxi_gal=1.5, burn_gal=20)
-    assert load.ramp.weight_lb == 1780 + 430 + 360
-    assert load.ramp.cg_in == pytest.approx((64080 + 13680 + 4750 + 17280) / 2570)
+    assert load.ramp.weight_lb == 1780 + 22 + 430 + 360  # oil is a fixed load
+    assert load.ramp.cg_in == pytest.approx((64080 - 330 + 13680 + 4750 + 17280) / 2592)
     assert load.takeoff.fuel_gal == 58.5 and load.landing.fuel_gal == 38.5
     assert load.ok
 
@@ -20,7 +20,7 @@ def test_normal_loading_by_hand():
 def test_over_gross_is_reported_with_the_margin():
     load = wb.compute(LIMITS, {"front": 400, "rear": 300, "baggage": 100}, 60, taxi_gal=1.5, burn_gal=20)
     assert not load.ok
-    assert any("Takeoff weight 2931 lb is over the 2800 lb limit by 131 lb" in p for p in load.problems)
+    assert any("Takeoff weight 2953 lb is over the 2800 lb limit by 153 lb" in p for p in load.problems)
 
 
 def test_station_limit_and_unknown_station():
@@ -54,4 +54,14 @@ def test_cg_moving_out_of_the_envelope_as_fuel_burns():
     load = wb.compute(limits, {"rear": 380, "baggage": 120}, 60, taxi_gal=0, burn_gal=50)
     assert load.takeoff.cg_in == pytest.approx(44.22, abs=0.01)
     assert load.landing.cg_in == pytest.approx(47.43, abs=0.01)
-    assert load.problems == ["Landing CG 47.4 in at 2260 lb is outside the envelope."]
+    assert load.problems == ["Landing CG 47.4 in at 2260 lb is 0.1 in aft of the aft limit (47.3 in)."]
+
+
+def test_limits_at_a_weight():
+    env = LIMITS.envelope  # forward 33.0 to 2250 lb, sloping to 39.5 at 2800; aft 47.3
+    assert wb.limits_at(env, 2000) == (33.0, 47.3)
+    fwd, aft = wb.limits_at(env, 2525)
+    assert fwd == pytest.approx(36.25) and aft == 47.3
+    assert wb.limits_at(env, 3000) is None
+    load = wb.compute(LIMITS, {"front": 700}, 20, taxi_gal=0, burn_gal=0)
+    assert "forward of the forward limit" in load.problems[0]

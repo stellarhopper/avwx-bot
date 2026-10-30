@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import html
+import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -45,6 +47,19 @@ PRICE_CACHE_READ = 0.20
 PRICE_CACHE_WRITE = 5.00
 
 SORRY = "Sorry, I couldn't get an answer just now. Try again in a minute."
+REPEATED = "Identical to a call you already made this turn; its result above still stands."
+UNFINISHED = "I couldn't finish working that out. Try asking about one part at a time."
+# Said to the model on the last round, when tools are switched off. Without
+# it, a model mid-task writes its next tool calls out as text, which would be
+# posted to Discord as gibberish.
+LAST_ROUND = (
+    "You've used all the tool calls for this message. Answer now from the results you already "
+    "have, and say briefly what you couldn't check. Don't write tool calls."
+)
+# Tool-call markup that leaked into the text anyway. Removed before posting.
+_LEAKED_CALLS = re.compile(
+    r"<(function_calls|invoke|antml:invoke|antml:function_calls)\b.*?(</\1>|$)", re.DOTALL
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,6 +146,15 @@ class Conversation:
     def _append(self, *messages: dict) -> None:
         self.store.append_chat_messages(self.guild_id, self.thread_id, messages)
 
+    async def _run_once(self, ctx: tools.ToolContext, call, seen: set[str]):
+        """Run a tool call, unless the identical call already ran this turn:
+        then point back at the earlier result instead of paying for it twice."""
+        key = f"{call.name}:{json.dumps(call.input, sort_keys=True)}"
+        if key in seen:
+            return REPEATED, False
+        seen.add(key)
+        return await tools.run(ctx, call.name, call.input)
+
     async def respond(
         self,
         members: list[MemberMessage],
@@ -145,9 +169,16 @@ class Conversation:
         messages = [*history, user]
         usage = ChatUsage()
         response = None
+        seen: set[str] = set()  # tool calls already run this turn
 
         for round_no in range(MAX_TOOL_ROUNDS + 1):
             last_round = round_no == MAX_TOOL_ROUNDS
+            if last_round:
+                # A mid-conversation system message: operator authority, and
+                # appending it keeps the cached history intact.
+                note = {"role": "system", "content": LAST_ROUND}
+                self._append(note)
+                messages.append(note)
             try:
                 response = await self.client.beta.messages.create(
                     model=MODEL,
@@ -185,7 +216,10 @@ class Conversation:
                 messages.append(assistant)
                 break
 
-            outputs = await asyncio.gather(*(tools.run(ctx, c.name, c.input) for c in calls))
+            log.info("chat %s round %d calls %s", self.thread_id, round_no, ", ".join(c.name for c in calls))
+            for c in calls:
+                log.debug("chat %s %s %s", self.thread_id, c.name, c.input)
+            outputs = await asyncio.gather(*(self._run_once(ctx, c, seen) for c in calls))
             results = {
                 "role": "user",
                 "content": [
@@ -200,6 +234,10 @@ class Conversation:
             messages += [assistant, results]
 
         text = "\n\n".join(b.text for b in response.content if b.type == "text").strip()
+        cleaned = _LEAKED_CALLS.sub("", text).strip()
+        if cleaned != text:
+            log.warning("chat %s: removed tool-call markup from the reply", self.thread_id)
+            text = cleaned or UNFINISHED
         if response.stop_reason == "max_tokens":
             text += "\n\n*(I ran out of room there. Ask me to continue.)*"
         reply = Reply(None if text in ("", prompt.NO_REPLY) else text, ctx.attachments, usage)

@@ -160,6 +160,10 @@ def route(rw: RouteWeather, tz, *, aircraft=None, now: datetime) -> dict:
                 f"{usable:g} gal usable"
             )
 
+    if any(w.wind is None for w in rw.leg_winds):
+        attention.append("No winds-aloft forecast reaches the flight time: times and fuel assume no wind")
+    if rw.performance.assumed:
+        attention.append("No aircraft given: times and fuel use a generic 110 kt and 10 gph")
     for w in rw.leg_winds:
         if w.wind and w.wind.speed_kt >= STRONG_CRUISE_WIND_KT:
             attention.append(f"Winds aloft {w.origin}→{w.dest}: {fmt.wind(w.wind.direction, w.wind.speed_kt)} at cruise")

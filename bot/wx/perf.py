@@ -124,6 +124,13 @@ def lookup(table: Table, **conditions: float) -> Result:
                 result.warnings.append(f"{_label(axis)} {x:g} is outside the table; used {edge:g}, which is conservative.")
         located.append((points, clamped))
 
+    if conditions.get("grass") and not any(c.kind == "grass" for c in table.corrections):
+        result.lower_bound = True
+        result.warnings.append(
+            "This table is for a hard surface and gives no correction for grass. "
+            "On grass the real figures are longer, by an unknown amount."
+        )
+
     values = {name: round(_interp(grid, located), 1) for name, grid in table.outputs.items()}
     result.steps.append(Step("table", dict(values)))
 

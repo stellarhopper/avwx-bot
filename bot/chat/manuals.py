@@ -24,6 +24,10 @@ from pathlib import Path
 from ..fleet import Aircraft, Manual
 
 log = logging.getLogger(__name__)
+# pypdf warns about every font it can't fully decode (scanned POHs have
+# plenty) on the first extraction. Text comes out fine regardless; the
+# warnings would only flood the bot's error log.
+logging.getLogger("pypdf").setLevel(logging.ERROR)
 
 MAX_PAGES = 6
 MAX_PDF_BYTES = 8 * 1024 * 1024

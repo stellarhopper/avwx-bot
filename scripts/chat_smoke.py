@@ -75,7 +75,7 @@ async def run(names: list[str]) -> None:
                 continue
             print(f"\n{'=' * 70}\n{name.upper()}  (club from {club_dir})")
             store = Store(":memory:")
-            for text in turns:
+            for text in turns[:int(__import__("os").environ.get("SMOKE_TURNS", "99"))]:
                 print(f"\n> {text}\n")
                 ctx = tools.ToolContext(awc, nws, fleet, cfg, clock.now)
                 convo = session.Conversation(client, store, 1, 1, effort=config.chat_effort)
@@ -95,7 +95,11 @@ async def run(names: list[str]) -> None:
 
 
 if __name__ == "__main__":
-    wanted = sys.argv[1:]
+    import logging
+
+    logging.basicConfig(level=logging.WARNING, format="  [%(name)s] %(message)s")
+    logging.getLogger("bot.chat").setLevel(logging.DEBUG if "-v" in sys.argv else logging.INFO)
+    wanted = [a for a in sys.argv[1:] if a != "-v"]
     if input("This calls the Claude API and costs real money. Go ahead? [y/N] ").strip().lower() != "y":
         raise SystemExit("Stopped.")
     asyncio.run(run(wanted))

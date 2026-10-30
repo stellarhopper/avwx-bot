@@ -44,7 +44,9 @@ async def test_later_arrival_uses_the_nws_hourly_forecast():
     gnb = rw.airports[-1]
     assert gnb.wind_source == "NWS hourly forecast"
     assert gnb.hourly is not None and gnb.density_source.startswith("forecast temperature")
-    assert any("outside the period" in p for p in rw.problems)
+    # The FB fixture is six days older than this flight: no wind, rather than the wrong day's.
+    assert all(w.wind is None for w in rw.leg_winds)
+    assert any("no forecast reaches the flight time" in p for p in rw.problems)
 
 
 async def test_a_failing_source_costs_only_its_section():

@@ -88,11 +88,23 @@ async def test_no_reply_posts_nothing_but_is_remembered():
 async def test_round_cap_forces_an_answer():
     calls = [message(tool("aircraft", {"tail": "N9999X"}), stop="tool_use") for _ in range(session.MAX_TOOL_ROUNDS)]
     fake = FakeClaude(*calls, message(text("Best I can do.")))
-    reply = await convo(fake).respond([ALICE], ctx())
+    store = Store(":memory:")
+    reply = await convo(fake, store).respond([ALICE], ctx())
     assert reply.text == "Best I can do."
     assert len(fake.requests) == session.MAX_TOOL_ROUNDS + 1
-    assert fake.requests[-1]["tool_choice"] == {"type": "none"}
-    assert fake.requests[0]["tool_choice"] == {"type": "auto"}
+    last = fake.requests[-1]
+    assert last["tool_choice"] == {"type": "none"} and fake.requests[0]["tool_choice"] == {"type": "auto"}
+    assert last["messages"][-1] == {"role": "system", "content": session.LAST_ROUND}
+    # Stored too, so the next turn replays the same history.
+    assert store.chat_messages(GUILD, THREAD)[-2] == {"role": "system", "content": session.LAST_ROUND}
+
+
+async def test_tool_calls_written_as_text_are_never_posted():
+    leaked = 'Checking.\n<invoke name="flight_plan">\n<parameter name="tail">N648F</parameter>\n</invoke>'
+    reply = await convo(FakeClaude(message(text(leaked)))).respond([ALICE], ctx())
+    assert reply.text == "Checking."
+    reply = await convo(FakeClaude(message(text('<invoke name="x"><parameter name="a">1'), stop="max_tokens"))).respond([ALICE], ctx())
+    assert "<invoke" not in reply.text and "parameter" not in reply.text
 
 
 async def test_refusal_is_not_stored():
@@ -122,3 +134,14 @@ async def test_a_long_thread_is_closed_after_its_reply():
            "cache_creation_input_tokens": 0}
     reply = await convo(FakeClaude(message(text("ok"), usage=big))).respond([ALICE], ctx())
     assert reply.text == "ok" and reply.close_reason == "long"
+
+
+async def test_an_identical_repeat_call_is_not_run_twice():
+    fake = FakeClaude(
+        message(tool("aircraft", {"tail": "N9999X"}, "t1"), stop="tool_use"),
+        message(tool("aircraft", {"tail": "N9999X"}, "t2"), stop="tool_use"),
+        message(text("Done.")),
+    )
+    await convo(fake).respond([ALICE], ctx())
+    second = fake.requests[2]["messages"][-1]["content"][0]
+    assert second["tool_use_id"] == "t2" and second["content"] == session.REPEATED

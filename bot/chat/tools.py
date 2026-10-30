@@ -73,15 +73,30 @@ class ToolContext:
         return fmt.Units.from_config(self.config)
 
 
+def _nullable(schema: dict) -> dict:
+    description = (schema.get("description", "") + " Null if not applicable.").strip()
+    inner = {k: v for k, v in schema.items() if k != "description"}
+    if "enum" in inner:
+        # The API refuses an enum under a ["string", "null"] type list.
+        return {"anyOf": [inner, {"type": "null"}], "description": description}
+    return {**inner, "type": [inner["type"], "null"], "description": description}
+
+
 def _tool(name: str, description: str, properties: dict, required: list[str]) -> dict:
+    """A strict tool definition. With strict schemas the model reliably fills
+    in required parameters but can leave optional ones out even when it means
+    to include them (it planned a flight without the tail number seven times
+    in a row). So every parameter is required, and the optional ones accept
+    null, which the handlers treat as "not given"."""
+    props = {k: (v if k in required else _nullable(v)) for k, v in properties.items()}
     return {
         "name": name,
         "description": description,
         "strict": True,
         "input_schema": {
             "type": "object",
-            "properties": properties,
-            "required": required,
+            "properties": props,
+            "required": list(props),
             "additionalProperties": False,
         },
     }
@@ -110,7 +125,8 @@ DEFINITIONS = [
         "fuel per flight with the club's reserve) using winds aloft at cruise, and gathers the weather at each "
         "airport at its arrival time, hazards and NWS alerts along the route, notable PIREPs, and the status "
         "of any mountain pass crossed. Returns an `attention` list of everything outside normal parameters. "
-        "Without a tail number it uses generic speeds and says so. Refuses while route points are unclear.",
+        "Always pass the tail number when the member has named a club aircraft, including on follow-up "
+        "plans: without it, speeds and fuel are generic. Refuses while route points are unclear.",
         {
             "route": _POINTS,
             "departure_local": _LOCAL,

@@ -40,6 +40,10 @@ PIREP_AGE_HOURS = 3
 STANDARD_ALTIMETER = 29.92
 # A METAR still describes conditions this close to now.
 METAR_FRESH = timedelta(minutes=90)
+# A winds-aloft forecast is used for a leg this far outside its "for use"
+# window, at most. Beyond that it describes a different day's weather, and no
+# wind is the more honest assumption.
+FB_STRETCH = timedelta(hours=3)
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,6 +153,8 @@ def use_window(forecast: Forecast, near: datetime) -> tuple[datetime, datetime] 
 
 
 def _pick_forecast(forecasts: dict[str, Forecast], when: datetime) -> tuple[str, Forecast, bool] | None:
+    """The forecast whose use window covers `when`; failing that the nearest,
+    if it's within FB_STRETCH of its window; else None."""
     best = None
     for key, fc in forecasts.items():
         window = use_window(fc, when)
@@ -160,7 +166,9 @@ def _pick_forecast(forecasts: dict[str, Forecast], when: datetime) -> tuple[str,
         gap = min(abs(when - start), abs(when - end))
         if best is None or gap < best[0]:
             best = (gap, key, fc)
-    return (best[1], best[2], False) if best else None
+    if best is None or best[0] > FB_STRETCH:
+        return None
+    return best[1], best[2], False
 
 
 def _samples(points: list[Point]) -> list[tuple[float, float]]:
@@ -232,9 +240,13 @@ async def plan(
         wind = interpolate(fc.site(site), cruise_alt_ft) if site else None
         use = f"{fc.use_from}–{fc.use_to}Z" if fc.use_from else None
         leg_winds.append(LegWind(a.ident, b.ident, site, key, use, covers, wind))
-    if forecasts and not all(w.covers for w in leg_winds):
+    if forecasts and any(w.wind is None for w in leg_winds):
         problems.append(
-            "Winds aloft: the flight is outside the period the latest FB forecasts cover; "
+            "Winds aloft: no forecast reaches the flight time, so those legs assume no wind."
+        )
+    elif forecasts and not all(w.covers for w in leg_winds):
+        problems.append(
+            "Winds aloft: the flight is just outside the period the latest FB forecasts cover; "
             "the nearest one is used."
         )
 

@@ -78,33 +78,58 @@ class Aircraft:
         return next((m for m in self.manuals if m.id == manual_id), None)
 
     def cruise_at(self, pressure_alt_ft: float, power_pct: float | None = None) -> tuple[float, float, str]:
-        """(TAS, gph, note) at an altitude, interpolated between the profile's
-        rows for one power setting. Clamped to the rows' altitude range, with
-        a note saying so."""
+        """(TAS, gph, note) at an altitude and power.
+
+        POH cruise tables list RPM and manifold pressure settings, whose
+        percentage of power differs at every altitude. So at each altitude in
+        the table the figures are interpolated by power, then between the two
+        altitudes either side. Power beyond what an altitude's rows reach, or
+        an altitude outside the table, is clamped to the nearest row, and the
+        note says so.
+        """
         power = power_pct if power_pct is not None else self.default_power_pct
-        powers = sorted({r.power_pct for r in self.cruise})
-        chosen = min(powers, key=lambda p: abs(p - power))
-        rows = sorted((r for r in self.cruise if r.power_pct == chosen), key=lambda r: r.pressure_alt_ft)
-        note = f"{chosen:g}% power" + ("" if chosen == power else f" (nearest to the {power:g}% asked for)")
-        if pressure_alt_ft <= rows[0].pressure_alt_ft or len(rows) == 1:
-            r = rows[0]
-            if pressure_alt_ft < r.pressure_alt_ft:
-                note += f"; lowest row is {r.pressure_alt_ft:g} ft"
-            return r.tas_kt, r.gph, note
-        if pressure_alt_ft >= rows[-1].pressure_alt_ft:
-            r = rows[-1]
-            if pressure_alt_ft > r.pressure_alt_ft:
-                note += f"; highest row is {r.pressure_alt_ft:g} ft, so TAS may be lower than shown"
-            return r.tas_kt, r.gph, note
-        for lo, hi in zip(rows, rows[1:]):
-            if lo.pressure_alt_ft <= pressure_alt_ft <= hi.pressure_alt_ft:
-                f = (pressure_alt_ft - lo.pressure_alt_ft) / (hi.pressure_alt_ft - lo.pressure_alt_ft)
-                return (
-                    round(lo.tas_kt + f * (hi.tas_kt - lo.tas_kt), 1),
-                    round(lo.gph + f * (hi.gph - lo.gph), 1),
-                    note,
-                )
-        raise AssertionError("unreachable")
+        notes: list[str] = []
+        levels = sorted({r.pressure_alt_ft for r in self.cruise})
+
+        def at_level(alt: float) -> tuple[float, float]:
+            rows = sorted((r for r in self.cruise if r.pressure_alt_ft == alt), key=lambda r: r.power_pct)
+            lo, hi = rows[0], rows[-1]
+            if power >= hi.power_pct:
+                if power > hi.power_pct:
+                    notes.append(f"{hi.power_pct:g}% is the most the table gives at {alt:,.0f} ft")
+                return hi.tas_kt, hi.gph
+            if power <= lo.power_pct:
+                if power < lo.power_pct:
+                    notes.append(f"{lo.power_pct:g}% is the least the table gives at {alt:,.0f} ft")
+                return lo.tas_kt, lo.gph
+            for a, b in zip(rows, rows[1:]):
+                if a.power_pct <= power <= b.power_pct:
+                    if b.power_pct == a.power_pct:
+                        return (a.tas_kt + b.tas_kt) / 2, (a.gph + b.gph) / 2
+                    f = (power - a.power_pct) / (b.power_pct - a.power_pct)
+                    return a.tas_kt + f * (b.tas_kt - a.tas_kt), a.gph + f * (b.gph - a.gph)
+            raise AssertionError("unreachable")
+
+        if pressure_alt_ft <= levels[0] or len(levels) == 1:
+            if pressure_alt_ft < levels[0]:
+                notes.append(f"lowest table altitude is {levels[0]:,.0f} ft")
+            tas, gph = at_level(levels[0])
+        elif pressure_alt_ft >= levels[-1]:
+            if pressure_alt_ft > levels[-1]:
+                notes.append(f"highest table altitude is {levels[-1]:,.0f} ft, so TAS may be lower than shown")
+            tas, gph = at_level(levels[-1])
+        else:
+            lo = max(a for a in levels if a <= pressure_alt_ft)
+            hi = min(a for a in levels if a >= pressure_alt_ft)
+            t1, g1 = at_level(lo)
+            if hi == lo:
+                tas, gph = t1, g1
+            else:
+                t2, g2 = at_level(hi)
+                f = (pressure_alt_ft - lo) / (hi - lo)
+                tas, gph = t1 + f * (t2 - t1), g1 + f * (g2 - g1)
+        note = f"{power:g}% power" + (f" ({'; '.join(dict.fromkeys(notes))})" if notes else "")
+        return round(tas, 1), round(gph, 1), note
 
 
 @dataclass
@@ -184,6 +209,10 @@ def load_aircraft(path: Path) -> Aircraft:
         lb_per_gal=_num(f, "lb_per_gal", f"{where} fuel"),
         envelope=points,
         stations=stations,
+        fixed=tuple(
+            (str(_req(x, "name", f"{where} fixed")), _num(x, "lb", f"{where} fixed"), _num(x, "arm", f"{where} fixed"))
+            for x in d.get("fixed", [])
+        ),
     )
 
     cruise = tuple(

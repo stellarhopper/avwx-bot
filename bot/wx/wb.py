@@ -35,6 +35,9 @@ class Limits:
     lb_per_gal: float
     envelope: tuple[tuple[float, float], ...]  # (cg_in, weight_lb), in order around the outline
     stations: tuple[Station, ...]
+    # Carried on every flight but not in the empty weight. A 1960s Cessna's
+    # licensed empty weight excludes engine oil, for one.
+    fixed: tuple[tuple[str, float, float], ...] = ()  # (name, lb, arm)
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,6 +88,34 @@ def in_envelope(envelope, cg_in: float, weight_lb: float) -> bool:
     return inside
 
 
+def limits_at(envelope, weight_lb: float) -> tuple[float, float] | None:
+    """(forward, aft) CG limits at a weight: where a horizontal line at that
+    weight crosses the envelope. None outside its weight range."""
+    pts = list(envelope)
+    xs = []
+    for (x1, y1), (x2, y2) in zip(pts, pts[1:] + pts[:1]):
+        if y1 == y2:
+            if y1 == weight_lb:
+                xs += [x1, x2]
+            continue
+        if min(y1, y2) <= weight_lb <= max(y1, y2):
+            xs.append(x1 + (weight_lb - y1) * (x2 - x1) / (y2 - y1))
+    return (min(xs), max(xs)) if xs else None
+
+
+def _cg_problem(envelope, c: "Condition") -> str:
+    where = f"{c.label.capitalize()} CG {c.cg_in:.1f} in at {c.weight_lb:.0f} lb"
+    lim = limits_at(envelope, c.weight_lb)
+    if lim is None:
+        return f"{where} is outside the envelope's weight range."
+    fwd, aft = lim
+    if c.cg_in < fwd:
+        return f"{where} is {fwd - c.cg_in:.1f} in forward of the forward limit ({fwd:.1f} in at this weight)."
+    if c.cg_in > aft:
+        return f"{where} is {c.cg_in - aft:.1f} in aft of the aft limit ({aft:.1f} in)."
+    return f"{where} is outside the envelope."
+
+
 def compute(limits: Limits, loads: dict[str, float], fuel_gal: float, *, taxi_gal: float, burn_gal: float) -> Loading:
     """`loads` maps station id → pounds. `fuel_gal` is fuel at engine start."""
     known = {s.id: s for s in limits.stations}
@@ -102,8 +133,8 @@ def compute(limits: Limits, loads: dict[str, float], fuel_gal: float, *, taxi_ga
         if s.max_lb is not None and lb > s.max_lb:
             problems.append(f"{s.name}: {lb:g} lb is over its {s.max_lb:g} lb limit.")
 
-    payload_w = sum(loads.values())
-    payload_m = sum(lb * known[sid].arm for sid, lb in loads.items())
+    payload_w = sum(loads.values()) + sum(lb for _, lb, _ in limits.fixed)
+    payload_m = sum(lb * known[sid].arm for sid, lb in loads.items()) + sum(lb * arm for _, lb, arm in limits.fixed)
     base_w = limits.empty_lb + payload_w
     base_m = limits.empty_lb * limits.empty_arm + payload_m
 
@@ -123,5 +154,5 @@ def compute(limits: Limits, loads: dict[str, float], fuel_gal: float, *, taxi_ga
             problems.append(f"{cond.label.capitalize()} weight {cond.weight_lb:.0f} lb is over the {limit:.0f} lb limit by {cond.weight_lb - limit:.0f} lb.")
     for cond in (takeoff, landing):
         if not in_envelope(limits.envelope, cond.cg_in, cond.weight_lb):
-            problems.append(f"{cond.label.capitalize()} CG {cond.cg_in:.1f} in at {cond.weight_lb:.0f} lb is outside the envelope.")
+            problems.append(_cg_problem(limits.envelope, cond))
     return Loading(ramp, takeoff, landing, problems)

@@ -36,7 +36,7 @@ async def test_mountain_plan_attention_and_fuel():
     assert not err
     assert out["route"] == "KBJC → Rollins Pass (VPROL) → KGNB → K20V → KSBS → KBJC"
     assert [f["to"] for f in out["flights"]] == ["KGNB", "KSBS", "KBJC"]
-    assert out["reserve_minutes"] == 45 and out["flights"][0]["fuel_gal"]["reserve"] == 8.2
+    assert out["reserve_minutes"] == 45 and out["flights"][0]["fuel_gal"]["reserve"] == 7.9
     text = " | ".join(out["attention"])
     assert "Rollins Pass: caution" in text and "Mountain wave risk elevated" in text
     assert "less than 2,000 ft above Rollins Pass" in text
@@ -54,8 +54,8 @@ async def test_granby_takeoff_is_a_lower_bound():
 async def test_weight_and_balance_reports_each_limit():
     out, err = await call("weight_and_balance", {"tail": "N9999X", "fuel_gal": 60, "burn_gal": 15, "loads": [
         {"station": "front", "lb": 400}, {"station": "rear", "lb": 300}, {"station": "baggage", "lb": 100}]})
-    assert not err and out["takeoff"]["weight_lb"] == 2931
-    assert any("over the 2800 lb limit by 131 lb" in a for a in out["attention"])
+    assert not err and out["takeoff"]["weight_lb"] == 2953
+    assert any("over the 2800 lb limit by 153 lb" in a for a in out["attention"])
 
 
 async def test_inputs_are_checked_again():
@@ -88,3 +88,23 @@ async def test_cards_attach_and_are_capped():
     assert err and "At most" in out
     assert [a.filename for a in c.attachments] == ["metar.png", "metar.png"]
     assert c.attachments[0].data.startswith(b"\x89PNG")
+
+
+def test_every_parameter_is_required_and_optional_ones_take_null():
+    for t in tools.DEFINITIONS:
+        schema = t["input_schema"]
+        assert set(schema["required"]) == set(schema["properties"]), t["name"]
+    plan = next(t for t in tools.DEFINITIONS if t["name"] == "flight_plan")["input_schema"]["properties"]
+    assert plan["tail"]["type"] == ["string", "null"]
+    assert plan["route"]["type"] == "array"  # required stays non-null
+    surface = next(t for t in tools.DEFINITIONS if t["name"] == "takeoff_landing")["input_schema"]["properties"]["surface"]
+    assert surface["anyOf"] == [{"type": "string", "enum": ["paved", "grass"]}, {"type": "null"}]
+
+
+async def test_handlers_treat_null_as_not_given():
+    out, err = await call("flight_plan", {"route": ["KBJC", "KGNB"], "departure_local": "2026-10-24 00:45",
+                                          "cruise_altitude_ft": 13500, "tail": None, "power_pct": None, "stops": None})
+    assert not err and out["performance"]["assumed"]
+    out, err = await call("takeoff_landing", {"tail": "N9999X", "airport": "KGNB", "weight_lb": 2600,
+                                              "at_local": None, "runway": None, "surface": None})
+    assert not err and out["inputs"]["surface"] == "paved"
