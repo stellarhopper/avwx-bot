@@ -153,8 +153,8 @@ DEFINITIONS = [
     _tool(
         "weight_and_balance",
         "Weight and CG at ramp, takeoff and landing for a club aircraft, checked against every limit and the "
-        "CG envelope. Station ids come from the `aircraft` tool. burn_gal is the fuel the flight burns, from "
-        "flight_plan.",
+        "CG envelope. Use it only when the member has given the loading; don't ask for weights to run it. "
+        "Station ids come from the `aircraft` tool. burn_gal is the fuel the flight burns, from flight_plan.",
         {
             "tail": _TAIL,
             "loads": {"type": "array", "items": {
@@ -171,7 +171,8 @@ DEFINITIONS = [
         "takeoff_landing",
         "Takeoff and landing distances and climb rate from the aircraft's POH tables, for an airport at a "
         "time: pressure altitude, temperature and headwind come from the weather. Results past the edge of a "
-        "table come back as lower bounds, never extrapolated. Compares the distances with the runway.",
+        "table come back as lower bounds, never extrapolated. Compares the distances with the runway. "
+        "Without a weight from the member, use the aircraft's maximum takeoff weight.",
         {
             "tail": _TAIL,
             "airport": {"type": "string"},
