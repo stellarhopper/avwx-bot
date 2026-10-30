@@ -7,7 +7,7 @@ import math
 from ..sources.windsaloft import Wind
 from ..wx import fmt
 from . import theme
-from .theme import BORDER, FAINT, MUTED, PANEL_HI, TEXT, WARN, Canvas
+from .theme import BORDER, FAINT, MUTED, PANEL_HI, TEXT, WARN, Canvas, arrowhead
 
 LOW_LEVELS = (3000, 6000, 9000, 12000, 18000, 24000)
 ALL_LEVELS = (3000, 6000, 9000, 12000, 18000, 24000, 30000, 34000, 39000)
@@ -33,10 +33,8 @@ def small_arrow(c: Canvas, cx: float, cy: float, direction: int | None, *, lengt
     dx, dy = math.sin(to) * length / 2, -math.cos(to) * length / 2
     tip = (cx + dx, cy + dy)
     tail = (cx - dx, cy - dy)
-    c.line([tail, tip], fill=color, width=2)
-    head = 5
-    left = (tip[0] - math.sin(to - 0.5) * head, tip[1] + math.cos(to - 0.5) * head)
-    right = (tip[0] - math.sin(to + 0.5) * head, tip[1] + math.cos(to + 0.5) * head)
+    neck, left, right = arrowhead(tip, to, 5, 0.5)
+    c.line([tail, neck], fill=color, width=2)
     c.polygon([tip, left, right], fill=color)
 
 

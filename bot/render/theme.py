@@ -208,6 +208,30 @@ def compass(c: Canvas, cx: float, cy: float, radius: float, *, letters=("N", "E"
         )
 
 
+# How far a shaft runs into its arrowhead. Ending exactly at the head's back
+# edge can leave a hairline gap at some angles once rasterised; 1 px in, the
+# head is already wider than the shaft, so the overlap can't show.
+SHAFT_OVERLAP = 1.0
+
+
+def arrowhead(tip, to: float, length: float, half_angle: float):
+    """The head of an arrow pointing along bearing `to` (radians, clockwise
+    from up), and where its shaft should stop.
+
+    The shaft must end at the back of the head, not run on to the tip. A line
+    has square ends, and near the point the head is narrower than the line, so
+    a shaft drawn to the tip pokes out beside it.
+
+    Returns (shaft_end, left, right): the shaft's end point, and the head's
+    back corners.
+    """
+    ux, uy = math.sin(to), -math.cos(to)
+    left = (tip[0] - math.sin(to - half_angle) * length, tip[1] + math.cos(to - half_angle) * length)
+    right = (tip[0] - math.sin(to + half_angle) * length, tip[1] + math.cos(to + half_angle) * length)
+    back = length * math.cos(half_angle) - SHAFT_OVERLAP
+    return (tip[0] - ux * back, tip[1] - uy * back), left, right
+
+
 def arrow(c: Canvas, cx: float, cy: float, radius: float, direction: int, *, color=TEXT) -> None:
     """An arrow pointing where the wind is going *to*.
 
@@ -218,10 +242,7 @@ def arrow(c: Canvas, cx: float, cy: float, radius: float, direction: int, *, col
     reach = radius - 6
     tip = (cx + math.sin(to) * reach, cy - math.cos(to) * reach)
     tail = (cx - math.sin(to) * reach, cy + math.cos(to) * reach)
-    head = 12
-    neck = (tip[0] - math.sin(to) * head * 0.8, tip[1] + math.cos(to) * head * 0.8)
-    left = (tip[0] - math.sin(to - 0.42) * head, tip[1] + math.cos(to - 0.42) * head)
-    right = (tip[0] - math.sin(to + 0.42) * head, tip[1] + math.cos(to + 0.42) * head)
+    neck, left, right = arrowhead(tip, to, 12, 0.42)
     # A dark halo first, so the arrow stays legible where it crosses a runway.
     c.line([tail, neck], fill=BG, width=6)
     c.polygon([tip, left, right], fill=BG, outline=BG)

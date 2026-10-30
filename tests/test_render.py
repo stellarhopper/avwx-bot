@@ -1,3 +1,4 @@
+import pytest
 import io
 from datetime import datetime, timezone
 
@@ -85,3 +86,22 @@ def test_runway_designator_rules():
     # Numerals sit 15 ft apart; "11" is spaced 27 ft left edge to left edge.
     assert abs(f.row_width("34") - (f._width("3") + 15 + f._width("4"))) < 1e-9
     assert abs(f.row_width("11") - (27 + f._width("1"))) < 1e-9
+
+
+def test_arrow_shafts_stop_at_the_back_of_the_head():
+    # A shaft drawn to the tip pokes out beside the point, where the head is
+    # narrower than the line. It must end inside the head's back edge.
+    import math
+
+    from bot.render import theme
+
+    for degrees in range(0, 360, 15):
+        to = math.radians(degrees)
+        tip = (100.0, 100.0)
+        for length, half in ((5, 0.5), (12, 0.42)):
+            end, left, right = theme.arrowhead(tip, to, length, half)
+            back = length * math.cos(half)
+            assert math.dist(tip, end) == pytest.approx(back - theme.SHAFT_OVERLAP)
+            # Midway between the back corners, along the arrow's axis.
+            mid = ((left[0] + right[0]) / 2, (left[1] + right[1]) / 2)
+            assert math.dist(tip, mid) == pytest.approx(back)
