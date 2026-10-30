@@ -9,3 +9,5 @@ data/*.db*
 *.egg-info/
 preview/
 _site/
+*.swp
+*.swo
