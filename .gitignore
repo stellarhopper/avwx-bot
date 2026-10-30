@@ -11,3 +11,4 @@ preview/
 _site/
 *.swp
 *.swo
+*.pages.json

@@ -122,6 +122,11 @@ def _choice(end: RunwayEnd, wind_dir: int | None, speed: int | None, gust: int |
     )
 
 
+def for_end(end: RunwayEnd, wind_dir: int | None, speed: int | None, gust: int | None) -> Choice:
+    """Wind components on a runway end the pilot has chosen."""
+    return _choice(end, wind_dir, speed, gust)
+
+
 def longest(ends: list[RunwayEnd], wind_dir: int | None, speed: int | None, gust: int | None) -> Choice | None:
     """The longest runway, used in whichever direction is more into the wind."""
     if not ends:

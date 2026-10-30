@@ -12,7 +12,8 @@ license-files = ["LICENSE"]
 requires-python = ">=3.11"
 # aiohttp comes with discord.py. jsonschema checks imported server configs
 # against schema/config.schema.json, the same file the configurator site uses.
-dependencies = ["discord.py>=2.4", "pillow>=10", "jsonschema>=4"]
+# anthropic runs the club chat, and pypdf reads the aircraft manuals for it.
+dependencies = ["discord.py>=2.4", "pillow>=10", "jsonschema>=4", "anthropic>=1.0", "pypdf>=5"]
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
@@ -28,7 +29,7 @@ filterwarnings = [
 ]
 
 [tool.setuptools]
-packages = ["bot", "bot.sources", "bot.wx", "bot.render", "bot.cogs"]
+packages = ["bot", "bot.sources", "bot.wx", "bot.render", "bot.cogs", "bot.chat"]
 
 [tool.setuptools.package-data]
 bot = ["fonts/*.ttf", "fonts/*.txt"]

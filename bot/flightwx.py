@@ -425,3 +425,25 @@ def _outlook(
                 + ("current altimeter" if metar and metar.altimeter_inhg else "standard altimeter")
             )
     return out
+
+
+async def airports_at(
+    awc: Awc, nws: Nws, points: list[Point], *, at: datetime, now: datetime | None = None,
+) -> tuple[list[AirportOutlook], list[str]]:
+    """Weather at each airport at one time: the same outlook a route plan gives
+    each airport at its ETA."""
+    now = now or clock.now()
+    problems: list[str] = []
+    ids = sorted({p.ident for p in points})
+    info, metars, tafs, hourlies = await asyncio.gather(
+        _guard(problems, "Airport data", awc.airports(ids), {}),
+        _guard(problems, "METARs", awc.metars(ids), {}),
+        _guard(problems, "TAFs", awc.tafs(ids), {}),
+        _hourlies(nws, points, problems),
+    )
+    outlooks = [
+        _outlook(p, "airport", at, (info or {}).get(p.ident), (metars or {}).get(p.ident),
+                 (tafs or {}).get(p.ident), hourlies.get(i), now)
+        for i, p in enumerate(points)
+    ]
+    return outlooks, problems
