@@ -360,6 +360,35 @@ function mountainSection() {
   return card("Mountain flying", toggle("mountain.enabled", "Show mountain-flying information (/mountain, and in the brief if ticked above)", draw), body);
 }
 
+function chatSection() {
+  const body = el("div", { class: "section-body" });
+  const draw = () => {
+    const channels = (hints?.channels || []).filter((c) => c.ok);
+    fill(body,
+      hints
+        ? groupField("Channels", channels.length
+          ? multiCheck("chat.channel_ids", channels.map((c) => ({ value: c.id, label: `#${c.name}${c.type === "forum" ? " (forum)" : ""}` })))
+          : el("p", { class: "muted" }, "No channels I can post in."),
+          "@mention the bot here to start a conversation. In a text channel it opens a thread; in a forum post it answers in the post.")
+        : field("Channel IDs", textInput("chat.channel_ids", {
+          placeholder: "e.g. 123456789012345678",
+          transform: (v) => [...new Set(v.split(/[\s,;]+/).filter(Boolean))],
+        }), "Separate several with spaces. Open this page from /avwx config edit to pick from a list instead."),
+      field("Stop listening after (hours)", numberInput("chat.idle_hours", { min: 0.5, max: 48 }),
+        "How long a quiet thread stays open. After that, @mention the bot to pick it up again."),
+      field("Requests per member per day", numberInput("chat.daily_requests_per_user", { min: 1, max: 500 })),
+      field("Daily spend cap (US$)", numberInput("chat.daily_usd_cap", { min: 0.5, max: 500 }),
+        "The bot stops answering for the rest of the day once the server has spent this much."),
+    );
+    body.setAttribute("aria-disabled", String(!get("chat.enabled")));
+  };
+  draw();
+  return card("Chat with Claude",
+    toggle("chat.enabled", "Answer questions about flights, weather and the club's aircraft", draw),
+    el("p", { class: "muted" }, "Works only on servers the bot's host has allowed, since each answer costs API credit."),
+    body);
+}
+
 // ------------------------------------------------------------- output
 
 function exportDoc() {
@@ -403,7 +432,7 @@ function start(doc) {
   config = merge(defaultsFor(schema), doc);
   config.schema_version = 1;
   $("#server-line").textContent = hints ? `Editing settings for ${hints.name}` : "Editing a config without a server attached — channels are entered by ID.";
-  form.replaceChildren(generalSection(), briefSection(), alertsSection(), mountainSection());
+  form.replaceChildren(generalSection(), briefSection(), alertsSection(), mountainSection(), chatSection());
   form.hidden = false;
   $("#output").hidden = false;
   $("#intro").querySelector("ol").hidden = !!hints;

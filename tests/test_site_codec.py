@@ -55,6 +55,10 @@ def test_javascript_link_decodes_in_python():
         {"schema_version": 1, "alerts": {"area": {"radius_nm": 2}}},
         {"schema_version": 1, "nope": True},
         {"schema_version": 1, "brief": {"channel_id": 5}},
+        {"schema_version": 1, "chat": {"enabled": True, "channel_ids": ["123456789012345678"], "idle_hours": 1.5}},
+        {"schema_version": 1, "chat": {"idle_hours": 0.1}},
+        {"schema_version": 1, "chat": {"daily_requests_per_user": 2.5}},
+        {"schema_version": 1, "chat": {"channel_ids": ["123456789012345678", "123456789012345678"]}},
     ],
 )
 def test_javascript_validator_agrees_with_jsonschema(doc):

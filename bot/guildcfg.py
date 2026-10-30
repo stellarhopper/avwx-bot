@@ -233,6 +233,8 @@ class ChannelInfo:
     can_post: bool
     can_attach: bool
     can_post_in_threads: bool
+    can_create_threads: bool = True
+    can_read_history: bool = True
 
 
 def config_stations(doc: dict) -> set[str]:
@@ -311,6 +313,23 @@ def semantic_problems(
             bad = sorted(set(mountain.get("passes", [])) - known_passes(region))
             if bad:
                 problems.append(f"Unknown pass(es) for {region}: {', '.join(bad)}.")
+
+    chat = eff["chat"]
+    if chat.get("enabled") and not chat.get("channel_ids"):
+        problems.append("Chat is on but no channels are chosen.")
+    for cid in chat.get("channel_ids", []):
+        info = channel(int(cid))
+        if info is None:
+            problems.append(f"Chat: channel `{cid}` isn't in this server, or I can't see it.")
+        elif info.kind == "other":
+            problems.append(f"Chat: #{info.name} is neither a text channel nor a forum.")
+        elif not info.can_post_in_threads or not info.can_read_history:
+            problems.append(
+                f"Chat: conversations happen in threads, so I need Send Messages in Threads "
+                f"and Read Message History in #{info.name}."
+            )
+        elif info.kind == "text" and not info.can_create_threads:
+            problems.append(f"Chat: I need Create Public Threads in #{info.name} to start a conversation there.")
 
     if eff["brief"].get("enabled") and not (eff["brief"].get("airports") or eff.get("home_airports")):
         problems.append("Morning brief is on but no airports are set (brief.airports or home_airports).")

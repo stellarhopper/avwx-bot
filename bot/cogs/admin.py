@@ -83,6 +83,8 @@ def channel_info(guild: discord.Guild, channel_id: int) -> guildcfg.ChannelInfo 
         can_post=p.view_channel and p.send_messages,
         can_attach=p.attach_files,
         can_post_in_threads=p.send_messages_in_threads,
+        can_create_threads=p.create_public_threads,
+        can_read_history=p.read_message_history,
     )
 
 

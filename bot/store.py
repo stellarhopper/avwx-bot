@@ -78,6 +78,47 @@ CREATE TABLE IF NOT EXISTS sent_alerts (
 CREATE INDEX IF NOT EXISTS idx_sent_alerts_open
     ON sent_alerts (guild_id, closed_at);
 
+-- Threads with a conversation with Claude. While one is open the bot answers
+-- every message in it; closed_at is set when it goes idle or runs too long.
+CREATE TABLE IF NOT EXISTS chat_threads (
+    guild_id     INTEGER NOT NULL,
+    thread_id    INTEGER NOT NULL,
+    started_by   INTEGER NOT NULL,
+    started_at   INTEGER NOT NULL,
+    last_active  INTEGER NOT NULL,
+    closed_at    INTEGER,
+    close_reason TEXT,
+    PRIMARY KEY (guild_id, thread_id)
+);
+
+-- The conversation as sent to the API, one row per message, in order.
+-- Append-only: thinking blocks are only valid in the exact conversation that
+-- produced them, so a message is never edited once stored.
+CREATE TABLE IF NOT EXISTS chat_messages (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id   INTEGER NOT NULL,
+    thread_id  INTEGER NOT NULL,
+    role       TEXT    NOT NULL,
+    content    TEXT    NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_thread
+    ON chat_messages (guild_id, thread_id, id);
+
+-- Spend per member per day, for the caps and for /avwx chat usage.
+CREATE TABLE IF NOT EXISTS chat_usage (
+    guild_id       INTEGER NOT NULL,
+    day            TEXT    NOT NULL,
+    user_id        INTEGER NOT NULL,
+    requests       INTEGER NOT NULL DEFAULT 0,
+    input_tokens   INTEGER NOT NULL DEFAULT 0,
+    cache_write    INTEGER NOT NULL DEFAULT 0,
+    cache_read     INTEGER NOT NULL DEFAULT 0,
+    output_tokens  INTEGER NOT NULL DEFAULT 0,
+    cost_micro_usd INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (guild_id, day, user_id)
+);
+
 -- Threads the bot created (forum posts for briefs and alerts), and which
 -- airports they were about, so a bare /metar typed in one knows what to show.
 CREATE TABLE IF NOT EXISTS post_context (
@@ -127,6 +168,31 @@ class SentAlert:
     posted_at: int
     expires_at: int | None
     closed_at: int | None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatThread:
+    guild_id: int
+    thread_id: int
+    started_by: int
+    started_at: int
+    last_active: int
+    closed_at: int | None
+    close_reason: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class ChatUsage:
+    requests: int = 0
+    input_tokens: int = 0
+    cache_write: int = 0
+    cache_read: int = 0
+    output_tokens: int = 0
+    cost_micro_usd: int = 0
+
+    @property
+    def cost_usd(self) -> float:
+        return self.cost_micro_usd / 1_000_000
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +334,9 @@ class Store:
                 "brief_log",
                 "sent_alerts",
                 "post_context",
+                "chat_threads",
+                "chat_messages",
+                "chat_usage",
             ):
                 self._conn.execute(f"DELETE FROM {table} WHERE guild_id = ?", (guild_id,))
 
@@ -398,3 +467,118 @@ class Store:
             airports=json.loads(row["airports"]),
             created_at=row["created_at"],
         )
+
+    # -------------------------------------------------------------------- chat
+
+    def get_chat_thread(self, guild_id: int, thread_id: int) -> ChatThread | None:
+        row = self._conn.execute(
+            "SELECT * FROM chat_threads WHERE guild_id = ? AND thread_id = ?",
+            (guild_id, thread_id),
+        ).fetchone()
+        return ChatThread(**dict(row)) if row else None
+
+    def open_chat_thread(self, guild_id: int, thread_id: int, user_id: int, *, fresh: bool = False) -> None:
+        """Start listening to a thread, or start again after it went idle.
+
+        `fresh` forgets the conversation so far: for a thread closed because it
+        ran too long, picking it up again starts over.
+        """
+        at = now()
+        with self._conn:
+            if fresh:
+                self._conn.execute(
+                    "DELETE FROM chat_messages WHERE guild_id = ? AND thread_id = ?",
+                    (guild_id, thread_id),
+                )
+            self._conn.execute(
+                "INSERT INTO chat_threads (guild_id, thread_id, started_by, started_at, last_active) "
+                "VALUES (?, ?, ?, ?, ?) ON CONFLICT (guild_id, thread_id) DO UPDATE SET "
+                "last_active = excluded.last_active, closed_at = NULL, close_reason = NULL"
+                + (", started_by = excluded.started_by, started_at = excluded.started_at" if fresh else ""),
+                (guild_id, thread_id, user_id, at, at),
+            )
+
+    def touch_chat_thread(self, guild_id: int, thread_id: int) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE chat_threads SET last_active = ? WHERE guild_id = ? AND thread_id = ?",
+                (now(), guild_id, thread_id),
+            )
+
+    def close_chat_thread(self, guild_id: int, thread_id: int, reason: str) -> None:
+        with self._conn:
+            self._conn.execute(
+                "UPDATE chat_threads SET closed_at = ?, close_reason = ? "
+                "WHERE guild_id = ? AND thread_id = ? AND closed_at IS NULL",
+                (now(), reason, guild_id, thread_id),
+            )
+
+    def append_chat_messages(self, guild_id: int, thread_id: int, messages: Iterable[dict]) -> None:
+        at = now()
+        with self._conn:
+            self._conn.executemany(
+                "INSERT INTO chat_messages (guild_id, thread_id, role, content, created_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                [
+                    (guild_id, thread_id, m["role"], json.dumps(m["content"]), at)
+                    for m in messages
+                ],
+            )
+
+    def chat_messages(self, guild_id: int, thread_id: int) -> list[dict]:
+        rows = self._conn.execute(
+            "SELECT role, content FROM chat_messages WHERE guild_id = ? AND thread_id = ? ORDER BY id",
+            (guild_id, thread_id),
+        ).fetchall()
+        return [{"role": r["role"], "content": json.loads(r["content"])} for r in rows]
+
+    def add_chat_usage(self, guild_id: int, day: str, user_id: int, usage: ChatUsage) -> None:
+        with self._conn:
+            self._conn.execute(
+                "INSERT INTO chat_usage (guild_id, day, user_id, requests, input_tokens, cache_write, "
+                "cache_read, output_tokens, cost_micro_usd) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) "
+                "ON CONFLICT (guild_id, day, user_id) DO UPDATE SET "
+                "requests = requests + excluded.requests, "
+                "input_tokens = input_tokens + excluded.input_tokens, "
+                "cache_write = cache_write + excluded.cache_write, "
+                "cache_read = cache_read + excluded.cache_read, "
+                "output_tokens = output_tokens + excluded.output_tokens, "
+                "cost_micro_usd = cost_micro_usd + excluded.cost_micro_usd",
+                (guild_id, day, user_id, usage.requests, usage.input_tokens, usage.cache_write,
+                 usage.cache_read, usage.output_tokens, usage.cost_micro_usd),
+            )
+
+    def chat_usage(self, guild_id: int, since_day: str, until_day: str | None = None,
+                   user_id: int | None = None) -> ChatUsage:
+        """Totals from `since_day` to `until_day` inclusive (ISO dates), for one
+        member or the whole guild."""
+        sql = (
+            "SELECT COALESCE(SUM(requests), 0) AS requests, COALESCE(SUM(input_tokens), 0) AS input_tokens, "
+            "COALESCE(SUM(cache_write), 0) AS cache_write, COALESCE(SUM(cache_read), 0) AS cache_read, "
+            "COALESCE(SUM(output_tokens), 0) AS output_tokens, "
+            "COALESCE(SUM(cost_micro_usd), 0) AS cost_micro_usd "
+            "FROM chat_usage WHERE guild_id = ? AND day >= ? AND day <= ?"
+        )
+        args: list = [guild_id, since_day, until_day or since_day]
+        if user_id is not None:
+            sql += " AND user_id = ?"
+            args.append(user_id)
+        return ChatUsage(**dict(self._conn.execute(sql, args).fetchone()))
+
+    def prune_chat(self, older_than: int) -> int:
+        """Forget conversations closed before `older_than`. Usage stays."""
+        with self._conn:
+            stale = self._conn.execute(
+                "SELECT guild_id, thread_id FROM chat_threads WHERE closed_at IS NOT NULL AND closed_at < ?",
+                (older_than,),
+            ).fetchall()
+            for row in stale:
+                self._conn.execute(
+                    "DELETE FROM chat_messages WHERE guild_id = ? AND thread_id = ?",
+                    (row["guild_id"], row["thread_id"]),
+                )
+                self._conn.execute(
+                    "DELETE FROM chat_threads WHERE guild_id = ? AND thread_id = ?",
+                    (row["guild_id"], row["thread_id"]),
+                )
+        return len(stale)

@@ -23,6 +23,8 @@ def perms(**overrides) -> types.SimpleNamespace:
         send_messages_in_threads=True,
         manage_threads=False,
         embed_links=True,
+        create_public_threads=True,
+        read_message_history=True,
     )
     base.update(overrides)
     return types.SimpleNamespace(**base)

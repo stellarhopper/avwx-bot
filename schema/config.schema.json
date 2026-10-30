@@ -191,6 +191,26 @@
           "description": "Pass IDs from the region file. Empty means all of them."
         }
       }
+    },
+    "chat": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Conversations with Claude about flights, weather and the club's aircraft. Works only on servers the bot's host allows, since it spends the host's Anthropic credit.",
+      "properties": {
+        "enabled": {"type": "boolean", "default": false},
+        "channel_ids": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/snowflake"},
+          "uniqueItems": true,
+          "maxItems": 10,
+          "description": "Text channels and forums where @mentioning the bot starts a conversation. Threads in them count too."
+        },
+        "idle_hours": {"type": "number", "minimum": 0.5, "maximum": 48, "default": 3,
+          "description": "After this long without a message, the bot stops listening to a thread until it's @mentioned again."},
+        "daily_requests_per_user": {"type": "integer", "minimum": 1, "maximum": 500, "default": 40},
+        "daily_usd_cap": {"type": "number", "minimum": 0.5, "maximum": 500, "default": 10,
+          "description": "Most the server may spend on Claude in a day, in US dollars."}
+      }
     }
   }
 }

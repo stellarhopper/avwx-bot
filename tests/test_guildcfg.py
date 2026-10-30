@@ -142,3 +142,14 @@ def test_region_file_is_consistent():
     for p in region["passes"]:
         assert p["winds"] in region["winds_aloft_sites"]
         assert p["on_pass"] or p["east"] or p["west"]
+
+
+def test_semantic_chat_channels():
+    doc = {"schema_version": 1, "chat": {"enabled": True}}
+    assert check(doc)[0] == ["Chat is on but no channels are chosen."]
+    no_threads = ChannelInfo("general", "text", True, True, True, can_create_threads=False)
+    doc = {"schema_version": 1, "chat": {"enabled": True, "channel_ids": ["123456789012345678", "223456789012345678"]}}
+    problems, _ = check(doc, channels={123456789012345678: no_threads, 223456789012345678: FORUM_OK})
+    assert problems == ["Chat: I need Create Public Threads in #general to start a conversation there."]
+    problems, _ = check(doc, channels={123456789012345678: TEXT_OK})
+    assert problems == ["Chat: channel `223456789012345678` isn't in this server, or I can't see it."]
