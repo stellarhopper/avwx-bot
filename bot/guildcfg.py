@@ -253,6 +253,7 @@ def semantic_problems(
     unknown_stations: Iterable[str],
     known_regions: Iterable[str],
     known_passes: Callable[[str], set[str]],
+    chat_allowed: bool = True,
 ) -> tuple[list[str], list[str]]:
     """(blocking problems, warnings) beyond what the schema can express.
 
@@ -317,6 +318,13 @@ def semantic_problems(
     chat = eff["chat"]
     if chat.get("enabled") and not chat.get("channel_ids"):
         problems.append("Chat is on but no channels are chosen.")
+    if chat.get("enabled") and not chat_allowed:
+        # Not a problem: the setting can wait for the host. But without this
+        # the bot just ignores every mention, and nobody can tell why.
+        warnings.append(
+            "Chat is on, but the bot's host hasn't allowed it for this server yet, so the bot will "
+            "ignore mentions until they do. Ask whoever runs the bot to add this server to CHAT_GUILD_IDS."
+        )
     for cid in chat.get("channel_ids", []):
         info = channel(int(cid))
         if info is None:

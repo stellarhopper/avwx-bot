@@ -226,6 +226,7 @@ class Admin(commands.Cog):
             unknown_stations=unknown,
             known_regions=regions.all_regions().keys(),
             known_passes=regions.pass_ids,
+            chat_allowed=self.bot.claude is not None and guild.id in self.bot.config.chat_guild_ids,
         )
         return problems, warnings + more
 

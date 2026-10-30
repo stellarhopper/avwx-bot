@@ -88,7 +88,7 @@ def _channels(mapping):
     return lambda cid: mapping.get(cid)
 
 
-def check(doc, *, channels=None, roles=(), unknown=()):
+def check(doc, *, channels=None, roles=(), unknown=(), chat_allowed=True):
     return guildcfg.semantic_problems(
         doc,
         channel=_channels(channels or {}),
@@ -96,6 +96,7 @@ def check(doc, *, channels=None, roles=(), unknown=()):
         unknown_stations=unknown,
         known_regions=regions.all_regions().keys(),
         known_passes=regions.pass_ids,
+        chat_allowed=chat_allowed,
     )
 
 
@@ -153,3 +154,14 @@ def test_semantic_chat_channels():
     assert problems == ["Chat: I need Create Public Threads in #general to start a conversation there."]
     problems, _ = check(doc, channels={123456789012345678: TEXT_OK})
     assert problems == ["Chat: channel `223456789012345678` isn't in this server, or I can't see it."]
+
+
+def test_chat_on_for_a_server_the_host_has_not_allowed_warns():
+    doc = {"schema_version": 1, "chat": {"enabled": True, "channel_ids": ["223456789012345678"]}}
+    channels = {223456789012345678: FORUM_OK}
+    problems, warnings = check(doc, channels=channels, chat_allowed=False)
+    assert problems == []  # it can still be applied
+    assert any("CHAT_GUILD_IDS" in w for w in warnings)
+    assert check(doc, channels=channels, chat_allowed=True) == ([], [])
+    off = {"schema_version": 1, "chat": {"enabled": False}}
+    assert check(off, chat_allowed=False) == ([], [])

@@ -29,7 +29,8 @@ def setup(monkeypatch):
     bot = types.SimpleNamespace(
         store=Store(":memory:"),
         awc=FakeAwc(),
-        config=types.SimpleNamespace(site_url="https://example.test/avwx/"),
+        config=types.SimpleNamespace(site_url="https://example.test/avwx/", chat_guild_ids=frozenset()),
+        claude=None,  # this host isn't set up for chat
     )
     cog = admin.Admin(bot)
     return types.SimpleNamespace(bot=bot, cog=cog, guild=guild, wx=wx, forum=forum, muted=muted, role=pilots)
@@ -140,6 +141,21 @@ async def test_switch_on_goes_through_the_same_checks(setup):
     i = FakeInteraction(s.guild)
     await s.cog._switch(i, "morning-brief", True)
     assert "no channel" in i.reply  # can't turn on a brief with nowhere to post it
+
+
+async def test_turning_chat_on_where_the_host_does_not_allow_it_warns(setup):
+    s = setup
+    s.bot.store.set_config(s.guild.id, doc_for(s, chat={"channel_ids": [str(s.forum.id)]}), actor_id=1)
+    i = FakeInteraction(s.guild)
+    await s.cog._switch(i, "chat", True)
+    assert "CHAT_GUILD_IDS" in i.reply
+    assert i.last.get("view") is not None  # a warning, not a refusal: Apply is still offered
+
+    s.bot.claude = object()  # now the host allows it
+    s.bot.config.chat_guild_ids = frozenset({s.guild.id})
+    i = FakeInteraction(s.guild)
+    await s.cog._switch(i, "chat", True)
+    assert "CHAT_GUILD_IDS" not in i.reply
 
 
 async def test_rollback_offers_the_previous_version(setup):
