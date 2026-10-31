@@ -42,6 +42,7 @@ KEEP_CLOSED_DAYS = 30
 EARLIER_MAX = 3
 LOOKBACK = timedelta(hours=12)
 EARLIER_SCAN = 15  # messages searched to find them, skipping the bot's own
+REPLIED_CLIP = 1500  # characters of a replied-to message passed along
 _BARE = re.compile(r"^[\s^?!.,:;'\"…↑⬆️👆]*(?:(?:this|that|above|here|thoughts|pls|please|see above)\b[\s^?!.,:;'\"…↑⬆️👆]*)?$", re.I)
 
 
@@ -91,7 +92,8 @@ def is_bare(text: str) -> bool:
 
 
 def thread_name(text: str) -> str:
-    first = " ".join(text.split())[:THREAD_NAME_LIMIT] or "Flight planning"
+    # Code fences (the raw METARs under a card) would show as backticks.
+    first = " ".join(text.replace("```", " ").split())[:THREAD_NAME_LIMIT] or "Flight planning"
     return first
 
 
@@ -101,6 +103,8 @@ class Chat(commands.Cog):
         self.locks: dict[int, asyncio.Lock] = {}
         self.pending: dict[int, list] = {}
         self.earlier: dict[int, list] = {}  # thread → messages a bare mention points back at
+        self.replied: dict[int, list] = {}  # thread → bot messages members replied to
+        self.addressed: dict[int, set] = {}  # thread → ids of messages that replied to the bot
 
     async def cog_load(self) -> None:
         self.janitor.start()
@@ -136,21 +140,30 @@ class Chat(commands.Cog):
             return
         mentioned = self.bot.user is not None and any(u.id == self.bot.user.id for u in message.mentions)
         store, guild_id = self.bot.store, message.guild.id
-
-        bare = mentioned and is_bare(member_text(message, self.bot.user))
+        # A Discord reply to one of the bot's messages is addressed to it,
+        # whether or not the reply pings it, and brings that message along.
+        replied = await self.replied_to_bot(message)
+        addressed = mentioned or replied is not None
+        bare = mentioned and replied is None and is_bare(member_text(message, self.bot.user))
 
         if not in_thread:
-            if not mentioned or channel.type not in TEXT_TYPES:
+            if not addressed or channel.type not in TEXT_TYPES:
                 return
             earlier = await self.earlier_messages(channel, message, since=None) if bare else []
-            title = earlier[-1].text if earlier else member_text(message, self.bot.user)
+            own = member_text(message, self.bot.user)
+            if earlier:
+                title = earlier[-1].text
+            elif replied is not None and is_bare(own):
+                title = replied.text
+            else:
+                title = own
             try:
                 thread = await message.create_thread(name=thread_name(title), auto_archive_duration=1440)
             except discord.HTTPException as exc:
                 log.warning("couldn't open a chat thread in %s: %s", channel.id, exc)
                 return
             store.open_chat_thread(guild_id, thread.id, message.author.id, fresh=True)
-            await self.enqueue(thread, message, cfg, earlier)
+            await self.enqueue(thread, message, cfg, earlier, replied)
             return
 
         record = store.get_chat_thread(guild_id, channel.id)
@@ -163,14 +176,39 @@ class Chat(commands.Cog):
             store.close_chat_thread(guild_id, channel.id, "idle")
         earlier = []
         if not is_open:
-            if not mentioned:
+            if not addressed:
                 return
             # Anything said since the bot stopped listening is new to it.
             if bare:
                 earlier = await self.earlier_messages(channel, message, since=record.last_active if record else None)
             fresh = record is not None and record.close_reason == "long"
             store.open_chat_thread(guild_id, channel.id, message.author.id, fresh=fresh)
-        await self.enqueue(channel, message, cfg, earlier)
+        await self.enqueue(channel, message, cfg, earlier, replied)
+
+    async def replied_to_bot(self, message) -> session.MemberMessage | None:
+        """The bot message this one replies to, as text for the model, or
+        None if it isn't a reply to the bot. Images count by their alt text:
+        many of the bot's posts are cards."""
+        ref = getattr(message, "reference", None)
+        if ref is None or ref.message_id is None or self.bot.user is None:
+            return None
+        target = getattr(ref, "resolved", None)
+        if target is None or isinstance(target, discord.DeletedReferencedMessage):
+            if ref.channel_id not in (None, message.channel.id):
+                return None
+            try:
+                target = await message.channel.fetch_message(ref.message_id)
+            except discord.HTTPException:
+                return None
+        author = getattr(target, "author", None)
+        if author is None or author.id != self.bot.user.id:
+            return None
+        parts = [target.content or ""]
+        parts += [f"[image: {a.description}]" for a in getattr(target, "attachments", []) if getattr(a, "description", None)]
+        parts += [e.description for e in getattr(target, "embeds", []) if getattr(e, "description", None)]
+        text = "\n".join(p for p in parts if p).strip()[:REPLIED_CLIP]
+        sent = target.created_at if isinstance(getattr(target, "created_at", None), datetime) else clock.now()
+        return session.MemberMessage(getattr(author, "display_name", None) or author.name, text, sent)
 
     async def earlier_messages(self, channel, message, *, since: int | None) -> list[session.MemberMessage]:
         """Members' messages just before `message` that the bot didn't see:
@@ -201,13 +239,16 @@ class Chat(commands.Cog):
 
     # ------------------------------------------------------------- turns
 
-    async def enqueue(self, thread, message, cfg: dict, earlier: list | None = None) -> None:
+    async def enqueue(self, thread, message, cfg: dict, earlier: list | None = None, replied=None) -> None:
         """Answer now, or, if a turn is already running in this thread, add
         the message to the next one. Members often send two or three messages
         in a row; they're answered together."""
         self.pending.setdefault(thread.id, []).append(message)
         if earlier:
             self.earlier.setdefault(thread.id, []).extend(earlier)
+        if replied is not None:
+            self.replied.setdefault(thread.id, []).append(replied)
+            self.addressed.setdefault(thread.id, set()).add(message.id)
         lock = self.locks.setdefault(thread.id, asyncio.Lock())
         if lock.locked():
             return
@@ -237,6 +278,8 @@ class Chat(commands.Cog):
         asker = batch[-1].author.id
         members = [self._member(m) for m in batch]
         earlier = self.earlier.pop(thread.id, [])
+        replied = self.replied.pop(thread.id, [])
+        replies_to_bot = self.addressed.pop(thread.id, set())
         convo = session.Conversation(
             self.bot.claude, self.bot.store, guild_id, thread.id, effort=self.bot.config.chat_effort
         )
@@ -248,7 +291,7 @@ class Chat(commands.Cog):
         mentioned = self.bot.user is not None and any(
             u.id == self.bot.user.id for m in batch for u in m.mentions
         )
-        if not mentioned and history:
+        if not mentioned and not replies_to_bot and history:
             reply_wanted, cost = await gate.should_reply(self.bot.claude, history, session.wrap(members, tz))
             self.bot.store.add_chat_usage(guild_id, day, asker, cost)
             if not reply_wanted:
@@ -266,7 +309,7 @@ class Chat(commands.Cog):
         ctx = tools.ToolContext(self.bot.awc, self.bot.nws, self.bot.fleet, cfg, clock.now)
         thread_context = None if history else self.describe_thread(thread)
         async with thread.typing():
-            reply = await convo.respond(members, ctx, context=thread_context, earlier=earlier)
+            reply = await convo.respond(members, ctx, context=thread_context, earlier=earlier, replied_to=replied)
 
         self.bot.store.add_chat_usage(guild_id, day, asker, reply.usage)
         self.bot.store.touch_chat_thread(guild_id, thread.id)

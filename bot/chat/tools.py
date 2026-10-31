@@ -140,9 +140,11 @@ DEFINITIONS = [
     ),
     _tool(
         "airport_weather",
-        "Weather at up to six airports at one time: the METAR, the TAF group in force (and any TEMPO/PROB), "
-        "the NWS hourly forecast where the TAF doesn't reach, wind on the best runway, and density altitude. "
-        "Returns an `attention` list. Leave at_local out for now.",
+        "Weather at up to six airports at one time, now or later: the METAR, the TAF group in force at that "
+        "time (and any TEMPO/PROB), the NWS hourly forecast where the TAF doesn't reach, wind on the best "
+        "runway, and density altitude. For a later time (\"this afternoon\", \"at 3pm\", \"tomorrow "
+        "morning\") pass at_local; null means now. Call it once per time of interest. Returns an "
+        "`attention` list.",
         {
             "airports": {"type": "array", "items": {"type": "string"}, "description": "Identifiers or names."},
             "at_local": _LOCAL,

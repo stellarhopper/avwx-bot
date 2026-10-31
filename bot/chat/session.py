@@ -85,7 +85,7 @@ def _member(m: MemberMessage, tz) -> str:
 
 def wrap(
     messages: list[MemberMessage], tz, context: str | None = None,
-    earlier: list[MemberMessage] | None = None,
+    earlier: list[MemberMessage] | None = None, replied_to: list[MemberMessage] | None = None,
 ) -> str:
     """Member messages as data for the model, with who said it and when.
 
@@ -94,12 +94,18 @@ def wrap(
 
     `earlier` are messages posted before a bare mention ("@avwx-bot ^") while
     the bot wasn't listening: the mention most likely points at one of them.
+    `replied_to` are the bot's own messages that members used Discord's reply
+    on: what the reply is about. Escaped the same way, since a bot post can
+    quote what members typed.
     """
     parts = []
     if context:
         parts.append(f"<thread_context>{html.escape(context)}</thread_context>")
     if earlier:
         parts.append("<earlier_messages>\n" + "\n".join(_member(m, tz) for m in earlier) + "\n</earlier_messages>")
+    for m in replied_to or []:
+        at = m.sent.astimezone(tz).strftime("%a %d %b %Y %H:%M %Z")
+        parts.append(f'<replied_to author="{html.escape(m.author, quote=True)}" at="{at}">{html.escape(m.text)}</replied_to>')
     parts.extend(_member(m, tz) for m in messages)
     return "\n".join(parts)
 
@@ -185,10 +191,12 @@ class Conversation:
         *,
         context: str | None = None,
         earlier: list[MemberMessage] | None = None,
+        replied_to: list[MemberMessage] | None = None,
     ) -> Reply:
         system = prompt.system(ctx.fleet.get())
         history = self.store.chat_messages(self.guild_id, self.thread_id)
-        user = {"role": "user", "content": [{"type": "text", "text": wrap(members, ctx.tz, context, earlier)}]}
+        text = wrap(members, ctx.tz, context, earlier, replied_to)
+        user = {"role": "user", "content": [{"type": "text", "text": text}]}
         self._append(user)
         messages = [*history, user]
         usage = ChatUsage()

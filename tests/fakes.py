@@ -41,6 +41,13 @@ class FakeMessage:
         self.view = view
         self.embed = embed
         self.edits: list[dict] = []
+        # Everything a FakeChannel or FakeThread sends is the bot's.
+        self.author = types.SimpleNamespace(id=BOT_USER, bot=True, name="avwx-bot", display_name="avwx-bot")
+        from datetime import datetime, timezone
+
+        self.created_at = datetime(2026, 10, 24, 6, 30, tzinfo=timezone.utc)
+        self.attachments = [f for f in self.files if f is not None]
+        self.embeds = [embed] if embed else []
 
     async def edit(self, **kwargs) -> "FakeMessage":
         self.edits.append(kwargs)
@@ -239,7 +246,8 @@ class FakeChatMessage:
     """A member's message, as the chat cog's on_message sees it."""
 
     def __init__(self, channel, content: str, *, author_id: int = ALICE, name: str = "Alice",
-                 mentions_bot: bool = False, bot: bool = False, minutes_ago: float = 0) -> None:
+                 mentions_bot: bool = False, bot: bool = False, minutes_ago: float = 0,
+                 reply_to=None, resolved: bool = True) -> None:
         self.id = next(_ids)
         self.channel = channel
         self.guild = types.SimpleNamespace(id=GUILD)
@@ -249,6 +257,11 @@ class FakeChatMessage:
         self.mentions = [types.SimpleNamespace(id=BOT_USER)] if mentions_bot else []
         self.webhook_id = None
         self.attachments = []
+        # Discord's reply button. `resolved=False` is a reply whose target
+        # wasn't in the payload, so the bot has to fetch it.
+        self.reference = None if reply_to is None else types.SimpleNamespace(
+            message_id=reply_to.id, channel_id=channel.id, resolved=reply_to if resolved else None,
+        )
         from datetime import datetime, timedelta, timezone
 
         self.created_at = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc) - timedelta(minutes=minutes_ago)
