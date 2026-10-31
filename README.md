@@ -20,8 +20,8 @@ Hazards, alerts and the mountain features cover the US.
 
 | Command | What it does |
 | --- | --- |
-| `/metar [airports]` | Current observation card for up to 4 airports, with the raw text |
-| `/taf [airports]` | Forecast with a flight-category timeline |
+| `/metar [airports]` | Current observation cards, with the raw text |
+| `/taf [airports]` | Forecasts with a flight-category timeline. Airports without a TAF are skipped |
 | `/brief [airports]` | Dashboard: conditions, TAF strips, AIRMETs and SIGMETs, NWS warnings, winds aloft, PIREPs, forecast discussion |
 | `/winds [where]` | Winds and temperatures aloft for an airport's nearest forecast site, or a site such as `DEN` |
 | `/pirep [airport] [radius] [hours]` | Recent pilot reports, with moderate-or-worse turbulence, icing and mountain wave listed first |
@@ -42,7 +42,8 @@ server's home airports. Three-letter US identifiers get a K added, so `bjc`
 becomes `KBJC`.
 
 **Each image comes with text:** the raw METAR or TAF goes in the message so it
-can be searched and copied, and the image has alt text.
+can be searched and copied, and the image has alt text. Up to 12 airports at a
+time, four cards to an image.
 
 ## Mountain flying
 

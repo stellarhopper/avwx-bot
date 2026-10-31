@@ -99,7 +99,7 @@ async def test_metar_command_includes_runway_in_alt_text():
     cog = wx_cog.Wx(bot)
     i = FakeInteraction(FakeGuild([]))
     await cog.metar.callback(cog, i, "KAPA")
-    assert "RWY 17L: headwind 6 kt" in i.last["file"].description
+    assert "RWY 17L: headwind 6 kt" in i.last["files"][0].description
 
 
 async def test_metar_command_survives_missing_runway_data():
@@ -108,7 +108,8 @@ async def test_metar_command_survives_missing_runway_data():
     cog = wx_cog.Wx(bot)
     i = FakeInteraction(FakeGuild([]))
     await cog.metar.callback(cog, i, "KAPA")
-    assert i.last["file"].filename == "metar.png" and "RWY" not in i.last["file"].description
+    image = i.last["files"][0]
+    assert image.filename == "metar.png" and "RWY" not in image.description
 
 
 def end(name, heading, length):
