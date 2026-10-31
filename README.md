@@ -141,7 +141,12 @@ In a text channel the bot opens a thread on that message. In an existing thread,
 such as the morning brief's forum post, it answers in place. After that it
 answers every message in the thread without being mentioned, until the thread
 has been quiet for a few hours (`chat.idle_hours`). A new @mention picks it up
-again.
+again. A mention with nothing else in it ("@avwx-bot ^") picks up the question
+asked just before it, while the bot wasn't listening.
+
+Not every message in a thread is for the bot. Ones that don't mention it go
+past a quick check by a small model first (Claude Haiku), so chatter and thanks
+cost a fraction of a cent and get no reply. Only questions reach the main model.
 
 The answers come from Claude, but **the numbers come from the bot's own code**.
 Claude only works out what's being asked and calls the bot's tools:

@@ -62,9 +62,17 @@ class FakeThread:
         self.archived = False
         self.locked = False
         self.guild = getattr(parent, "guild", types.SimpleNamespace(id=GUILD))
+        self.posted: list = []  # members' messages, oldest first, for history()
+        self.typing_count = 0
 
     def typing(self):
+        self.typing_count += 1
         return contextlib.nullcontext()
+
+    async def history(self, *, limit=100, before=None):
+        msgs = self.posted if before is None else self.posted[: self.posted.index(before)]
+        for m in reversed(msgs[-limit:]):
+            yield m
 
     async def send(self, content=None, **kwargs) -> FakeMessage:
         msg = FakeMessage(self, content, kwargs.get("file"), kwargs.get("files"), kwargs.get("view"), kwargs.get("embed"))
@@ -99,6 +107,12 @@ class FakeChannel:
         self.sent: list[FakeMessage] = []
         self.threads: list[FakeThread] = []
         self.guild = types.SimpleNamespace(id=GUILD)
+        self.posted: list = []  # members' messages, oldest first, for history()
+
+    async def history(self, *, limit=100, before=None):
+        msgs = self.posted if before is None else self.posted[: self.posted.index(before)]
+        for m in reversed(msgs[-limit:]):
+            yield m
 
     def permissions_for(self, member):
         return self._perms
@@ -225,7 +239,7 @@ class FakeChatMessage:
     """A member's message, as the chat cog's on_message sees it."""
 
     def __init__(self, channel, content: str, *, author_id: int = ALICE, name: str = "Alice",
-                 mentions_bot: bool = False, bot: bool = False) -> None:
+                 mentions_bot: bool = False, bot: bool = False, minutes_ago: float = 0) -> None:
         self.id = next(_ids)
         self.channel = channel
         self.guild = types.SimpleNamespace(id=GUILD)
@@ -235,9 +249,11 @@ class FakeChatMessage:
         self.mentions = [types.SimpleNamespace(id=BOT_USER)] if mentions_bot else []
         self.webhook_id = None
         self.attachments = []
-        from datetime import datetime, timezone
+        from datetime import datetime, timedelta, timezone
 
-        self.created_at = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc)
+        self.created_at = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc) - timedelta(minutes=minutes_ago)
+        if hasattr(channel, "posted"):
+            channel.posted.append(self)
 
     async def create_thread(self, *, name, auto_archive_duration=None):
         thread = FakeThread(self.channel, name)

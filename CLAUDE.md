@@ -41,6 +41,10 @@ the layout.
 - Each tool result carries an `attention` list decided in code
   (`bot/chat/summary.py`). Replies lead with it and stay brief, because members
   still get a full briefing elsewhere.
+- Messages in an open thread that don't mention the bot pass `bot/chat/gate.py`
+  (Haiku, yes/no) before the main model. It fails open: an error means reply.
+  Daily limits and the typing indicator come after it, so chatter triggers
+  neither.
 - Conversation history is append-only and replayed byte for byte. Thinking
   blocks are only valid in the exact conversation that produced them, so never
   edit, reorder or trim stored messages. A tool call and its results are stored

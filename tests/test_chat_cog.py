@@ -156,3 +156,96 @@ def test_split_message_keeps_paragraphs_and_limits():
     assert chunks == ["a" * 1000, "b" * 1000 + "\n\n" + "c" * 50]
     long_line = "word " * 1000
     assert all(len(c) <= chat_cog.MESSAGE_LIMIT for c in chat_cog.split_message(long_line))
+
+
+# ------------------------------------------------- the reply check (gate)
+
+async def test_chatter_is_screened_out_without_typing_or_an_opus_call():
+    cog, bot, channel, _, fake = setup(message(text("Hi.")))
+    fake.gate = [False]
+    await cog.on_message(FakeChatMessage(channel, "hi", mentions_bot=True))
+    thread = channel.threads[0]
+    await cog.on_message(FakeChatMessage(thread, "see you all at the fly-in!", author_id=BOB, name="Bob"))
+    assert len(fake.requests) == 1 and len(fake.gate_requests) == 1
+    assert [m.content for m in thread.sent] == ["Hi."] and thread.typing_count == 1
+    # Kept in the conversation, so a later question can refer to it.
+    assert "fly-in" in bot.store.chat_messages(GUILD, thread.id)[-1]["content"][0]["text"]
+    assert "fly-in" in fake.gate_requests[0]["messages"][0]["content"]
+    assert fake.gate_requests[0]["model"] == "claude-haiku-5-5"
+
+
+async def test_a_question_passes_the_check_and_is_answered():
+    cog, bot, channel, _, fake = setup(message(text("Hi.")), message(text("VFR all day.")))
+    fake.gate = [True]
+    await cog.on_message(FakeChatMessage(channel, "hi", mentions_bot=True))
+    thread = channel.threads[0]
+    await cog.on_message(FakeChatMessage(thread, "what about tomorrow?"))
+    assert [m.content for m in thread.sent] == ["Hi.", "VFR all day."] and thread.typing_count == 2
+    assert bot.store.chat_usage(GUILD, "2026-10-24").requests == 2  # questions, not API calls
+
+
+async def test_a_failed_check_falls_through_to_the_main_model():
+    import anthropic
+    import httpx2 as httpx
+
+    err = anthropic.APIConnectionError(request=httpx.Request("POST", "https://api.anthropic.com/v1/messages"))
+    cog, bot, channel, _, fake = setup(message(text("Hi.")), message(text("Answered anyway.")))
+    fake.gate = [err]
+    await cog.on_message(FakeChatMessage(channel, "hi", mentions_bot=True))
+    thread = channel.threads[0]
+    await cog.on_message(FakeChatMessage(thread, "and the winds?"))
+    assert thread.sent[-1].content == "Answered anyway."
+
+
+async def test_a_mention_skips_the_check():
+    cog, bot, channel, _, fake = setup(message(text("Hi.")), message(text("Sure.")))
+    await cog.on_message(FakeChatMessage(channel, "hi", mentions_bot=True))
+    thread = channel.threads[0]
+    await cog.on_message(FakeChatMessage(thread, "and tomorrow?", mentions_bot=True))
+    assert fake.gate_requests == [] and thread.sent[-1].content == "Sure."
+
+
+async def test_chatter_never_draws_a_limit_message():
+    cog, bot, channel, _, fake = setup(message(text("Hi.")), cfg_extra={"daily_requests_per_user": 1})
+    fake.gate = [False]
+    await cog.on_message(FakeChatMessage(channel, "hi", mentions_bot=True))
+    thread = channel.threads[0]
+    await cog.on_message(FakeChatMessage(thread, "lol"))  # over the limit, but not for the bot
+    assert [m.content for m in thread.sent] == ["Hi."]
+
+
+# ------------------------------------------- bare mentions look back
+
+async def test_a_bare_mention_in_an_idle_thread_brings_what_was_missed():
+    cog, bot, _, forum, fake = setup(message(text("Hi.")), message(text("Rollins looks fine.")))
+    post = FakeThread(forum, "Morning brief")
+    forum.threads.append(post)
+    await cog.on_message(FakeChatMessage(post, "hi", mentions_bot=True, minutes_ago=200))
+    FakeChatMessage(post, "already seen", minutes_ago=180)  # before the bot went quiet
+    with bot.store._conn:
+        last_active = FakeChatMessage(post, "x", minutes_ago=170).created_at.timestamp()
+        post.posted.pop()
+        bot.store._conn.execute("UPDATE chat_threads SET last_active = ?", (int(last_active),))
+    FakeChatMessage(post, "Is Rollins pass OK this afternoon?", author_id=BOB, name="Bob", minutes_ago=90)
+    FakeChatMessage(post, "an old bot post", bot=True, minutes_ago=80)
+    await cog.on_message(FakeChatMessage(post, "^", mentions_bot=True))
+    sent = fake.requests[1]["messages"][-1]["content"][0]["text"]
+    assert "<earlier_messages>" in sent and "Is Rollins pass OK" in sent
+    assert "already seen" not in sent and "old bot post" not in sent
+    assert post.sent[-1].content == "Rollins looks fine."
+
+
+async def test_a_bare_mention_in_a_text_channel_names_the_thread_after_the_question():
+    cog, bot, channel, _, fake = setup(message(text("Yes.")))
+    FakeChatMessage(channel, "Anyone know if KGNB has fuel today?", author_id=BOB, name="Bob", minutes_ago=5)
+    await cog.on_message(FakeChatMessage(channel, "@avwx-bot ^", mentions_bot=True))
+    (thread,) = channel.threads
+    assert thread.name == "Anyone know if KGNB has fuel today?"
+    assert "KGNB has fuel" in fake.requests[0]["messages"][0]["content"][0]["text"]
+
+
+async def test_a_mention_with_a_real_question_does_not_look_back():
+    cog, bot, channel, _, fake = setup(message(text("Yes.")))
+    FakeChatMessage(channel, "unrelated chatter", author_id=BOB, name="Bob", minutes_ago=5)
+    await cog.on_message(FakeChatMessage(channel, "what's the weather at KBJC?", mentions_bot=True))
+    assert "<earlier_messages>" not in fake.requests[0]["messages"][0]["content"][0]["text"]

@@ -25,7 +25,7 @@ import discord
 from discord.ext import commands, tasks
 
 from .. import clock, context
-from ..chat import session, tools
+from ..chat import gate, session, tools
 from ..store import now as store_now
 
 log = logging.getLogger(__name__)
@@ -36,6 +36,13 @@ MESSAGE_LIMIT = 1900  # under Discord's 2000, leaving room for the odd addition
 MEMBER_TEXT_LIMIT = 4000
 THREAD_NAME_LIMIT = 90
 KEEP_CLOSED_DAYS = 30
+# A mention with nothing else to it ("@avwx-bot", "@avwx-bot ^", "@avwx-bot
+# this?") points at something said before the bot was listening. Up to this
+# many earlier messages are passed along, from no further back than LOOKBACK.
+EARLIER_MAX = 3
+LOOKBACK = timedelta(hours=12)
+EARLIER_SCAN = 15  # messages searched to find them, skipping the bot's own
+_BARE = re.compile(r"^[\s^?!.,:;'\"…↑⬆️👆]*(?:(?:this|that|above|here|thoughts|pls|please|see above)\b[\s^?!.,:;'\"…↑⬆️👆]*)?$", re.I)
 
 
 def split_message(text: str, limit: int = MESSAGE_LIMIT) -> list[str]:
@@ -77,6 +84,12 @@ def member_text(message, bot_user) -> str:
     return text.strip()[:MEMBER_TEXT_LIMIT]
 
 
+def is_bare(text: str) -> bool:
+    """A mention with nothing of its own to answer: just the mention, "^",
+    "?", "this ^" and the like."""
+    return bool(_BARE.match(text))
+
+
 def thread_name(text: str) -> str:
     first = " ".join(text.split())[:THREAD_NAME_LIMIT] or "Flight planning"
     return first
@@ -87,6 +100,7 @@ class Chat(commands.Cog):
         self.bot = bot
         self.locks: dict[int, asyncio.Lock] = {}
         self.pending: dict[int, list] = {}
+        self.earlier: dict[int, list] = {}  # thread → messages a bare mention points back at
 
     async def cog_load(self) -> None:
         self.janitor.start()
@@ -123,18 +137,20 @@ class Chat(commands.Cog):
         mentioned = self.bot.user is not None and any(u.id == self.bot.user.id for u in message.mentions)
         store, guild_id = self.bot.store, message.guild.id
 
+        bare = mentioned and is_bare(member_text(message, self.bot.user))
+
         if not in_thread:
             if not mentioned or channel.type not in TEXT_TYPES:
                 return
+            earlier = await self.earlier_messages(channel, message, since=None) if bare else []
+            title = earlier[-1].text if earlier else member_text(message, self.bot.user)
             try:
-                thread = await message.create_thread(
-                    name=thread_name(member_text(message, self.bot.user)), auto_archive_duration=1440
-                )
+                thread = await message.create_thread(name=thread_name(title), auto_archive_duration=1440)
             except discord.HTTPException as exc:
                 log.warning("couldn't open a chat thread in %s: %s", channel.id, exc)
                 return
             store.open_chat_thread(guild_id, thread.id, message.author.id, fresh=True)
-            await self.enqueue(thread, message, cfg)
+            await self.enqueue(thread, message, cfg, earlier)
             return
 
         record = store.get_chat_thread(guild_id, channel.id)
@@ -145,20 +161,53 @@ class Chat(commands.Cog):
         )
         if record is not None and record.closed_at is None and not is_open:
             store.close_chat_thread(guild_id, channel.id, "idle")
+        earlier = []
         if not is_open:
             if not mentioned:
                 return
+            # Anything said since the bot stopped listening is new to it.
+            if bare:
+                earlier = await self.earlier_messages(channel, message, since=record.last_active if record else None)
             fresh = record is not None and record.close_reason == "long"
             store.open_chat_thread(guild_id, channel.id, message.author.id, fresh=fresh)
-        await self.enqueue(channel, message, cfg)
+        await self.enqueue(channel, message, cfg, earlier)
+
+    async def earlier_messages(self, channel, message, *, since: int | None) -> list[session.MemberMessage]:
+        """Members' messages just before `message` that the bot didn't see:
+        newer than `since` (an epoch time) and LOOKBACK, oldest first."""
+        floor = clock.now() - LOOKBACK
+        out = []
+        try:
+            async for m in channel.history(limit=EARLIER_SCAN, before=message):
+                if m.author.bot or m.webhook_id:
+                    continue
+                if m.created_at < floor or (since is not None and m.created_at.timestamp() <= since):
+                    break
+                text = member_text(m, self.bot.user)
+                if text:
+                    out.append(self._member(m))
+                if len(out) >= EARLIER_MAX:
+                    break
+        except discord.HTTPException as exc:
+            log.warning("couldn't read earlier messages in %s: %s", channel.id, exc)
+        return out[::-1]
+
+    def _member(self, m) -> session.MemberMessage:
+        return session.MemberMessage(
+            getattr(m.author, "display_name", None) or m.author.name,
+            member_text(m, self.bot.user),
+            m.created_at if isinstance(m.created_at, datetime) else clock.now(),
+        )
 
     # ------------------------------------------------------------- turns
 
-    async def enqueue(self, thread, message, cfg: dict) -> None:
+    async def enqueue(self, thread, message, cfg: dict, earlier: list | None = None) -> None:
         """Answer now, or, if a turn is already running in this thread, add
         the message to the next one. Members often send two or three messages
         in a row; they're answered together."""
         self.pending.setdefault(thread.id, []).append(message)
+        if earlier:
+            self.earlier.setdefault(thread.id, []).extend(earlier)
         lock = self.locks.setdefault(thread.id, asyncio.Lock())
         if lock.locked():
             return
@@ -186,28 +235,38 @@ class Chat(commands.Cog):
         tz = context.guild_context(self.bot.store, guild_id).tz
         day = clock.now().astimezone(tz).date().isoformat()
         asker = batch[-1].author.id
+        members = [self._member(m) for m in batch]
+        earlier = self.earlier.pop(thread.id, [])
+        convo = session.Conversation(
+            self.bot.claude, self.bot.store, guild_id, thread.id, effort=self.bot.config.chat_effort
+        )
+        history = convo.history()
+
+        # Messages that don't mention the bot go past a cheap check first, so
+        # chatter costs no Opus call and shows no typing indicator. A mention
+        # always gets an answer.
+        mentioned = self.bot.user is not None and any(
+            u.id == self.bot.user.id for m in batch for u in m.mentions
+        )
+        if not mentioned and history:
+            reply_wanted, cost = await gate.should_reply(self.bot.claude, history, session.wrap(members, tz))
+            self.bot.store.add_chat_usage(guild_id, day, asker, cost)
+            if not reply_wanted:
+                convo.note(members, tz)
+                self.bot.store.touch_chat_thread(guild_id, thread.id)
+                return
+
+        # Limits are checked only once the bot means to answer, so chatter
+        # never draws a "you've reached today's limit" reply.
         refusal = self._over_limits(guild_id, asker, cfg, day)
         if refusal:
             await self.send(thread, refusal)
             return
 
-        members = [
-            session.MemberMessage(
-                getattr(m.author, "display_name", None) or m.author.name,
-                member_text(m, self.bot.user),
-                m.created_at if isinstance(m.created_at, datetime) else clock.now(),
-            )
-            for m in batch
-        ]
         ctx = tools.ToolContext(self.bot.awc, self.bot.nws, self.bot.fleet, cfg, clock.now)
-        thread_context = None
-        if not self.bot.store.chat_messages(guild_id, thread.id):
-            thread_context = self.describe_thread(thread)
-        convo = session.Conversation(
-            self.bot.claude, self.bot.store, guild_id, thread.id, effort=self.bot.config.chat_effort
-        )
+        thread_context = None if history else self.describe_thread(thread)
         async with thread.typing():
-            reply = await convo.respond(members, ctx, context=thread_context)
+            reply = await convo.respond(members, ctx, context=thread_context, earlier=earlier)
 
         self.bot.store.add_chat_usage(guild_id, day, asker, reply.usage)
         self.bot.store.touch_chat_thread(guild_id, thread.id)

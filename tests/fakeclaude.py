@@ -11,6 +11,7 @@ import copy
 import itertools
 import types
 
+from anthropic.types import Message
 from anthropic.types.beta import BetaMessage
 
 _ids = itertools.count(1)
@@ -38,10 +39,27 @@ def tool(name: str, args: dict, call_id: str | None = None) -> dict:
 
 
 class FakeClaude:
-    def __init__(self, *script) -> None:
+    """`script` answers the main model's requests in order. `gate` answers
+    the reply check (bot/chat/gate.py) in order: True, False, or an
+    exception. With `gate` used up, the check says reply."""
+
+    def __init__(self, *script, gate=()) -> None:
         self.script = list(script)
+        self.gate = list(gate)
         self.requests: list[dict] = []
+        self.gate_requests: list[dict] = []
         self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=self._create))
+        self.messages = types.SimpleNamespace(create=self._gate_create)
+
+    async def _gate_create(self, **kwargs):
+        self.gate_requests.append(copy.deepcopy(kwargs))
+        verdict = self.gate.pop(0) if self.gate else True
+        if isinstance(verdict, Exception):
+            raise verdict
+        body = message(text('{"reply": %s}' % ("true" if verdict else "false")),
+                       usage={"input_tokens": 400, "output_tokens": 6})
+        body["model"] = "claude-haiku-5-5"
+        return Message.model_validate(body)
 
     async def _create(self, **kwargs):
         self.requests.append(copy.deepcopy(kwargs))

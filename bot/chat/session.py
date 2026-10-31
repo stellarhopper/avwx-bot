@@ -17,7 +17,7 @@ import html
 import json
 import logging
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 import anthropic
@@ -78,18 +78,29 @@ class Reply:
     failed: bool = False
 
 
-def wrap(messages: list[MemberMessage], tz, context: str | None = None) -> str:
+def _member(m: MemberMessage, tz) -> str:
+    at = m.sent.astimezone(tz).strftime("%a %d %b %Y %H:%M %Z")
+    return f'<member name="{html.escape(m.author, quote=True)}" at="{at}">{html.escape(m.text)}</member>'
+
+
+def wrap(
+    messages: list[MemberMessage], tz, context: str | None = None,
+    earlier: list[MemberMessage] | None = None,
+) -> str:
     """Member messages as data for the model, with who said it and when.
 
     Angle brackets in what members type are escaped, so nobody can close the
     <member> tag and write something that looks like it came from elsewhere.
+
+    `earlier` are messages posted before a bare mention ("@avwx-bot ^") while
+    the bot wasn't listening: the mention most likely points at one of them.
     """
     parts = []
     if context:
         parts.append(f"<thread_context>{html.escape(context)}</thread_context>")
-    for m in messages:
-        at = m.sent.astimezone(tz).strftime("%a %d %b %Y %H:%M %Z")
-        parts.append(f'<member name="{html.escape(m.author, quote=True)}" at="{at}">{html.escape(m.text)}</member>')
+    if earlier:
+        parts.append("<earlier_messages>\n" + "\n".join(_member(m, tz) for m in earlier) + "\n</earlier_messages>")
+    parts.extend(_member(m, tz) for m in messages)
     return "\n".join(parts)
 
 
@@ -103,8 +114,10 @@ def cost_micro_usd(usage) -> int:
 
 
 def _add(total: ChatUsage, usage) -> ChatUsage:
+    # `requests` counts questions answered, not API calls: one question with
+    # five tool rounds is still one of a member's daily requests.
     return ChatUsage(
-        requests=total.requests + 1,
+        requests=total.requests,
         input_tokens=total.input_tokens + (usage.input_tokens or 0),
         cache_write=total.cache_write + (getattr(usage, "cache_creation_input_tokens", 0) or 0),
         cache_read=total.cache_read + (getattr(usage, "cache_read_input_tokens", 0) or 0),
@@ -146,6 +159,16 @@ class Conversation:
     def _append(self, *messages: dict) -> None:
         self.store.append_chat_messages(self.guild_id, self.thread_id, messages)
 
+    def note(self, members: list[MemberMessage], tz) -> None:
+        """Keep messages the bot isn't answering as part of the conversation,
+        so a later question that refers to them ("what about what Bob
+        said?") has them. They're stored as a user turn with no reply; the
+        API joins consecutive user turns, and history stays append-only."""
+        self._append({"role": "user", "content": [{"type": "text", "text": wrap(members, tz)}]})
+
+    def history(self) -> list[dict]:
+        return self.store.chat_messages(self.guild_id, self.thread_id)
+
     async def _run_once(self, ctx: tools.ToolContext, call, seen: set[str]):
         """Run a tool call, unless the identical call already ran this turn:
         then point back at the earlier result instead of paying for it twice."""
@@ -161,10 +184,11 @@ class Conversation:
         ctx: tools.ToolContext,
         *,
         context: str | None = None,
+        earlier: list[MemberMessage] | None = None,
     ) -> Reply:
         system = prompt.system(ctx.fleet.get())
         history = self.store.chat_messages(self.guild_id, self.thread_id)
-        user = {"role": "user", "content": [{"type": "text", "text": wrap(members, ctx.tz, context)}]}
+        user = {"role": "user", "content": [{"type": "text", "text": wrap(members, ctx.tz, context, earlier)}]}
         self._append(user)
         messages = [*history, user]
         usage = ChatUsage()
@@ -207,7 +231,7 @@ class Conversation:
 
             if response.stop_reason == "refusal":
                 # Nothing stored: a declined answer shouldn't become history.
-                return Reply("I can't help with that one.", usage=usage)
+                return Reply("I can't help with that one.", usage=replace(usage, requests=1))
 
             assistant = {"role": "assistant", "content": [b.to_dict(mode="json") for b in response.content]}
             calls = [b for b in response.content if b.type == "tool_use"]
@@ -240,7 +264,7 @@ class Conversation:
             text = cleaned or UNFINISHED
         if response.stop_reason == "max_tokens":
             text += "\n\n*(I ran out of room there. Ask me to continue.)*"
-        reply = Reply(None if text in ("", prompt.NO_REPLY) else text, ctx.attachments, usage)
+        reply = Reply(None if text in ("", prompt.NO_REPLY) else text, ctx.attachments, replace(usage, requests=1))
         if reply.text and reply.text.endswith(prompt.NO_REPLY):
             reply.text = reply.text.removesuffix(prompt.NO_REPLY).strip() or None
 

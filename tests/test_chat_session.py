@@ -38,7 +38,7 @@ async def test_tool_round_then_answer_and_the_request_shape():
     store = Store(":memory:")
     reply = await convo(fake, store).respond([ALICE], ctx())
     assert reply.text == "About 1,020 lb with full fuel." and not reply.failed
-    assert reply.usage.requests == 2
+    assert reply.usage.requests == 1  # one question, however many API calls
     assert reply.usage.cost_micro_usd == 2 * round(1000 * 4 + 200 * 20 + 5000 * 0.2)
 
     first, second = fake.requests
