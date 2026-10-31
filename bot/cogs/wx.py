@@ -17,6 +17,9 @@ from ..sources.http import SourceError
 log = logging.getLogger(__name__)
 
 MAX_STATIONS = 4
+# How many of a server's or thread's airports /taf looks through for ones
+# with a TAF. The config allows at most 12.
+DEFAULT_LIST_LIMIT = 12
 # Discord rejects message content over 2000 characters.
 CONTENT_LIMIT = 2000
 
@@ -87,9 +90,15 @@ class Wx(commands.Cog):
     @app_commands.describe(airports="Up to 4, e.g. KDEN. Leave empty for this server's or thread's airports.")
     async def taf(self, interaction: discord.Interaction, airports: str | None = None) -> None:
         ctx = context.guild_context(self.bot.store, interaction.guild_id)
+        typed = bool(airports and airports.strip())
         try:
+            # Airports typed are capped at the card limit as usual. The
+            # server's or thread's list is taken whole, because many fields in
+            # it (KBDU, KLMO) never issue a TAF: taking its first four could
+            # show one TAF while three that exist further down go unseen.
             ids = context.resolve_stations(
-                self.bot.store, interaction, airports, limit=MAX_STATIONS, fallback=ctx.home_airports
+                self.bot.store, interaction, airports,
+                limit=MAX_STATIONS if typed else DEFAULT_LIST_LIMIT, fallback=ctx.home_airports,
             )
         except context.StationInputError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
@@ -97,12 +106,15 @@ class Wx(commands.Cog):
         await interaction.response.defer(thinking=True)
 
         found = await self.bot.awc.tafs(ids)
-        missing = [i for i in ids if i not in found]
-        tafs = [found[i] for i in ids if i in found]
+        # Airports without a TAF are left out without comment: plenty of
+        # fields never issue one, and saying so each time is just noise.
+        tafs = [found[i] for i in ids if i in found][:MAX_STATIONS]
         if not tafs:
-            await interaction.followup.send(
-                f"No TAF for {', '.join(ids)}. Not every airport has one; try the nearest larger field."
-            )
+            if typed:
+                text = f"No TAF for {', '.join(ids)}. Not every airport has one; try the nearest larger field."
+            else:
+                text = f"None of these airports has a TAF: {', '.join(ids)}. Name a larger field, e.g. `/taf KDEN`."
+            await interaction.followup.send(text)
             return
 
         def render() -> bytes:
@@ -111,8 +123,6 @@ class Wx(commands.Cog):
         image = await asyncio.to_thread(render)
         alt = " | ".join(cards.taf_alt(t) for t in tafs)
         content = raw_block([t.raw for t in tafs])
-        if missing:
-            content += f"\nNo TAF for {', '.join(missing)}."
         await interaction.followup.send(content, file=png_file(image, "taf.png", alt))
 
 
