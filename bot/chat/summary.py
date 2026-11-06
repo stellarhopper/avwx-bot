@@ -27,6 +27,7 @@ from datetime import datetime
 from ..flightwx import AirportOutlook, RouteWeather
 from ..hazards import label as hazard_label
 from ..hazards import weight as hazard_weight
+from ..sources import windsaloft
 from ..sources.awc import TafPeriod
 from ..wx import fmt, runways
 
@@ -162,6 +163,8 @@ def route(rw: RouteWeather, tz, *, aircraft=None, now: datetime) -> dict:
                 f"{usable:g} gal usable"
             )
 
+    if rw.winds_model:
+        attention.append(windsaloft.disclaimer(rw.winds_model))
     if any(w.wind is None for w in rw.leg_winds):
         attention.append("No winds-aloft forecast reaches the flight time: times and fuel assume no wind")
     if rw.performance.assumed:

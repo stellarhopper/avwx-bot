@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import math
 
+from ..sources import windsaloft
 from ..sources.windsaloft import Wind
 from ..wx import fmt
 from . import theme
@@ -82,8 +83,14 @@ WIDTH = 560
 PAD = 16
 
 
-def winds_card(site: str, valid: str | None, use: str | None, levels: dict[int, Wind], *, units: fmt.Units) -> bytes:
-    height = 60 + 2 * (24 * 4 + 6) + 30 + PAD
+def winds_card(
+    site: str, valid: str | None, use: str | None, levels: dict[int, Wind], *, units: fmt.Units,
+    model: str | None = None,
+) -> bytes:
+    note = windsaloft.disclaimer(model)
+    probe = Canvas(WIDTH, 10)
+    note_lines = probe.wrap(f"⚠ {note}", WIDTH - 2 * PAD, size=10.5) if note else []
+    height = 60 + 2 * (24 * 4 + 6) + 30 + PAD + 15 * len(note_lines)
     c = Canvas(WIDTH, height)
     c.text(PAD, PAD - 2, site, style="bold", size=26)
     c.text(PAD + c.text_width(site, style="bold", size=26) + 10, PAD + 11, "Winds & temperatures aloft",
@@ -93,10 +100,12 @@ def winds_card(site: str, valid: str | None, use: str | None, levels: dict[int, 
     y = table(c, PAD, 60, WIDTH - 2 * PAD, levels, units=units, columns=LOW_LEVELS)
     y = table(c, PAD, y + 10, WIDTH - 2 * PAD, levels, units=units, columns=ALL_LEVELS[6:])
     c.text(PAD, y + 12, "Arrows point where the wind blows to. Orange 30 kt+, red 50 kt+.", size=10.5, fill=FAINT)
+    for i, line in enumerate(note_lines):
+        c.text(PAD, y + 30 + 15 * i, line, size=10.5, fill=WARN)
     return c.png()
 
 
-def winds_alt(site: str, levels: dict[int, Wind]) -> str:
+def winds_alt(site: str, levels: dict[int, Wind], model: str | None = None) -> str:
     parts = []
     for lvl in ALL_LEVELS:
         w = levels.get(lvl)
@@ -105,5 +114,6 @@ def winds_alt(site: str, levels: dict[int, Wind]) -> str:
         wind = "light and variable" if w.light_variable else f"{w.direction:03d} at {w.speed_kt} kt"
         temp = f", {w.temp_c}°C" if w.temp_c is not None else ""
         parts.append(f"{_level_label(lvl)} {wind}{temp}")
-    return f"Winds aloft at {site}: " + "; ".join(parts)
+    note = windsaloft.disclaimer(model)
+    return f"Winds aloft at {site}: " + "; ".join(parts) + (f". {note}" if note else "")
 

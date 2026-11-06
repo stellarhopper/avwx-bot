@@ -25,7 +25,10 @@ class FixtureHttp(Http):
     async def _fetch(self, url, params, accept):
         self.requests.append((url, params))
         params = params or {}
-        product = url.rsplit("/", 1)[-1] if "aviationweather" in url else _nws_product(url)
+        if "open-meteo" in url:
+            product = "openmeteo"
+        else:
+            product = url.rsplit("/", 1)[-1] if "aviationweather" in url else _nws_product(url)
         if product in self.overrides:
             o = self.overrides[product]
             return o(params) if callable(o) else o
@@ -61,6 +64,8 @@ class FixtureHttp(Http):
         if product == "windtemp":
             name = "windtemp_high.txt" if params.get("level") == "high" else "windtemp_all.txt"
             return 200, fixture_text(name)
+        if product == "openmeteo":
+            return 200, json.dumps(model_winds(params))
         if product == "alerts":
             return 200, fixture_text("nws_alerts_co.json")
         if product == "points":
@@ -83,6 +88,20 @@ def all_metars() -> list[dict]:
     out = {d["icaoId"]: d for d in fixture_json("metar_mountain.json")}
     out.update({d["icaoId"]: d for d in fixture_json("metar.json")})
     return list(out.values())
+
+
+def model_winds(params: dict) -> list[dict]:
+    """Open-Meteo's reply for the requested points. The fixture is the real
+    reply for five sites (DEN, GJT, PUB, ALS, ABQ) on the fixture date; every
+    point gets the nearest of them, so the one-entry-per-point shape is real
+    and the sites the tests look at get their own data."""
+    captured = fixture_json("openmeteo_gfs.json")
+    lats = [float(v) for v in params["latitude"].split(",")]
+    lons = [float(v) for v in params["longitude"].split(",")]
+    return [
+        min(captured, key=lambda e: (e["latitude"] - lat) ** 2 + (e["longitude"] - lon) ** 2)
+        for lat, lon in zip(lats, lons)
+    ]
 
 
 def _nws_product(url: str) -> str:

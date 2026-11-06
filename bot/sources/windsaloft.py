@@ -46,12 +46,22 @@ class Forecast:
     use_from: str | None = None  # e.g. "0200"
     use_to: str | None = None
     sites: dict[str, dict[int, Wind]] = field(default_factory=dict)
+    # Set when these are model winds standing in for the FB (see
+    # sources/openmeteo.py): the model's name, for the disclaimer.
+    model: str | None = None
 
     def site(self, ident: str) -> dict[int, Wind]:
         ident = ident.upper()
         if len(ident) == 4 and ident.startswith("K"):
             ident = ident[1:]
         return self.sites.get(ident, {})
+
+
+def disclaimer(model: str | None) -> str | None:
+    """What to say wherever model winds (Forecast.model) are shown in place of the FB."""
+    if model is None:
+        return None
+    return f"No FB winds-aloft forecast is being published: these winds are from the {model}."
 
 
 def decode(group: str, altitude_ft: int) -> Wind | None:

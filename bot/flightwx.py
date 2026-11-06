@@ -109,6 +109,7 @@ class RouteWeather:
     wave: mountain.WaveRisk | None = None
     highest: tuple[str, float] | None = None
     problems: list[str] = field(default_factory=list)
+    winds_model: str | None = None  # model winds standing in for the FB
 
 
 async def _guard(problems: list[str], what: str, coro, default=None):
@@ -246,7 +247,7 @@ async def plan(
         )
     elif forecasts and not all(w.covers for w in leg_winds):
         problems.append(
-            "Winds aloft: the flight is just outside the period the latest FB forecasts cover; "
+            "Winds aloft: the flight is just outside the period the latest winds-aloft forecasts cover; "
             "the nearest one is used."
         )
 
@@ -310,6 +311,8 @@ async def plan(
         wave=board.wave if board else None,
         highest=max(known, key=lambda k: k[1]) if known else None,
         problems=problems + (board.problems if board else []),
+        winds_model=next((fc.model for fc in forecasts.values() if fc.model), None)
+        or (board.winds_model if board else None),
     )
 
 

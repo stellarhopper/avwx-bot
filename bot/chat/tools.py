@@ -27,6 +27,7 @@ from ..render import mountain as mountain_render
 from ..render import winds as winds_render
 from ..sources.awc import Awc
 from ..sources import nws as nws_text
+from ..sources import windsaloft
 from ..sources.http import SourceError
 from ..sources.nws import Nws
 from ..wx import fmt, navlog, perf, runways, wb
@@ -580,6 +581,8 @@ async def mountain_passes(ctx: ToolContext, args: dict) -> dict:
     if board.wave.level in ("elevated", "high"):
         attention.append(f"Mountain wave risk {board.wave.level}: {'; '.join(board.wave.reasons)}")
     attention += [f"Missing data: {problem}" for problem in board.problems]
+    if board.winds_model:
+        attention.append(windsaloft.disclaimer(board.winds_model))
     return {
         "as_of": summary.when(board.generated, ctx.tz),
         "attention": attention or ["Nothing outside normal parameters found."],
@@ -684,8 +687,10 @@ async def attach_card(ctx: ToolContext, args: dict) -> dict:
             raise ToolError("No winds-aloft site near there.")
         levels = forecast.site(site)
         use = f"{forecast.use_from}–{forecast.use_to}Z" if forecast.use_from else None
-        image = await asyncio.to_thread(winds_render.winds_card, site, forecast.valid, use, levels, units=units)
-        alt = winds_render.winds_alt(site, levels)
+        image = await asyncio.to_thread(
+            lambda: winds_render.winds_card(site, forecast.valid, use, levels, units=units, model=forecast.model)
+        )
+        alt = winds_render.winds_alt(site, levels, forecast.model)
     else:
         region = regions.get(ctx.config.get("mountain", {}).get("region")) or next(iter(regions.all_regions().values()), None)
         if region is None:
@@ -694,7 +699,10 @@ async def attach_card(ctx: ToolContext, args: dict) -> dict:
         image = await asyncio.to_thread(mountain_render.render, board, tz=tz, units=units)
         alt = mountain_render.board_alt(board)
     ctx.attachments.append(Attachment(f"{kind}.png", image, alt))
-    return {"attached": f"{kind} card", "note": "It will appear under your reply. Don't repeat its contents."}
+    out = {"attached": f"{kind} card", "note": "It will appear under your reply. Don't repeat its contents."}
+    if kind == "winds" and forecast.model:
+        out["attention"] = [windsaloft.disclaimer(forecast.model)]
+    return out
 
 
 HANDLERS = {

@@ -554,7 +554,21 @@ class Awc:
         return [_cwa(d) for d in data or []]
 
     async def winds_aloft(self, fcst: str = "06") -> windsaloft.Forecast:
-        """The low- and high-level FB winds, merged into one table per site."""
+        """The low- and high-level FB winds, merged into one table per site,
+        or model winds in their place when no FB can be had (Forecast.model
+        says so)."""
+        try:
+            return await self._fb_winds(fcst)
+        except SourceError as fb_error:
+            # Imported here: openmeteo needs hazards, which needs this module.
+            from .openmeteo import OpenMeteo
+
+            try:
+                return await OpenMeteo(self.http).winds_aloft(fcst, clock.now())
+            except SourceError as exc:
+                raise SourceError(f"{fb_error} The model stand-in failed too: {exc}") from exc
+
+    async def _fb_winds(self, fcst: str) -> windsaloft.Forecast:
         _, low = await self.http.get_text(
             f"{BASE}/windtemp", {"region": "all", "level": "low", "fcst": fcst}, ttl=TTL_WINDS
         )

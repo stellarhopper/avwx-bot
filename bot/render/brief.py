@@ -199,8 +199,13 @@ def _draw(c: Canvas, data: BriefData, radius: int) -> float:
     if data.alerts is not None:
         y = alerts_section(c, y, data) + 18
     if data.winds is not None:
-        y = section_title(c, y, f"Winds aloft — {data.winds.site}", f"valid {data.winds.valid or '—'}, use {data.winds.use or '—'}")
-        y = winds.table(c, PAD, y, WIDTH - 2 * PAD, data.winds.levels, units=data.units) + 18
+        source = "GFS model, " if data.winds.model else ""
+        y = section_title(c, y, f"Winds aloft — {data.winds.site}",
+                          f"{source}valid {data.winds.valid or '—'}, use {data.winds.use or '—'}")
+        y = winds.table(c, PAD, y, WIDTH - 2 * PAD, data.winds.levels, units=data.units) + 6
+        from .mountain import model_note
+
+        y = model_note(c, y, data.winds.model) + 12
     if data.mountain is not None:
         from . import mountain as mountain_render
 
@@ -214,7 +219,10 @@ def _draw(c: Canvas, data: BriefData, radius: int) -> float:
         c.text(PAD, y, f"⚠ {problem}", size=10.5, fill=WARN)
         y += 16
     c.line([(PAD, y + 4), (WIDTH - PAD, y + 4)], fill=BORDER)
-    c.text(PAD, y + 12, "aviationweather.gov · weather.gov — for awareness, not an official briefing", size=10, fill=FAINT)
+    sources = "aviationweather.gov · weather.gov"
+    if (data.winds and data.winds.model) or getattr(data.mountain, "winds_model", None):
+        sources += " · open-meteo.com"
+    c.text(PAD, y + 12, f"{sources} — for awareness, not an official briefing", size=10, fill=FAINT)
     return y + 34
 
 

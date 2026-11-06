@@ -38,6 +38,7 @@ class WindsAloft:
     valid: str | None
     use: str | None
     levels: dict[int, Wind]
+    model: str | None = None  # model winds standing in for the FB
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +83,7 @@ async def winds_for(awc: Awc, point: tuple[float, float] | None, site: str | Non
     if not chosen or not forecast.site(chosen):
         return None
     use = f"{forecast.use_from}–{forecast.use_to}Z" if forecast.use_from else None
-    return WindsAloft(chosen, forecast.valid, use, forecast.site(chosen))
+    return WindsAloft(chosen, forecast.valid, use, forecast.site(chosen), forecast.model)
 
 
 async def us_alerts(nws: Nws, states: set[str], points, radius_nm: float) -> list[Alert]:

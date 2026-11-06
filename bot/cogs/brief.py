@@ -214,10 +214,13 @@ class Briefs(commands.Cog):
             await interaction.followup.send("No winds-aloft forecast for there (they cover the US only).", ephemeral=True)
             return
         use = f"{forecast.use_from}–{forecast.use_to}Z" if forecast.use_from else None
-        image = await asyncio.to_thread(winds_render.winds_card, site, forecast.valid, use, levels, units=ctx.units)
+        image = await asyncio.to_thread(
+            lambda: winds_render.winds_card(site, forecast.valid, use, levels, units=ctx.units, model=forecast.model)
+        )
+        source = f" ({forecast.model}: no FB forecast is being published)" if forecast.model else ""
         await interaction.followup.send(
-            f"Winds aloft for **{site}**, valid {forecast.valid}.",
-            file=png_file(image, "winds.png", winds_render.winds_alt(site, levels)),
+            f"Winds aloft for **{site}**, valid {forecast.valid}{source}.",
+            file=png_file(image, "winds.png", winds_render.winds_alt(site, levels, forecast.model)),
         )
 
     @app_commands.command(name="pirep", description="Recent pilot reports near an airport")

@@ -165,13 +165,13 @@ def test_mountain_data_failures_reach_the_brief_warnings():
     ]
 
 
-async def test_an_empty_winds_forecast_is_a_reported_failure():
+async def test_no_winds_from_fb_or_model_is_a_reported_failure():
     import pytest as _pytest
 
     from bot import briefing
     from bot.sources.http import SourceError
 
-    c = clients(windtemp=(204, ""))
+    c = clients(windtemp=(204, ""), openmeteo=(503, ""))
     with _pytest.raises(SourceError, match="winds-aloft"):
         await c.awc.winds_aloft()
     data = await briefing.gather(c.awc, c.nws, title="t", airports=["KBJC"], config=guildcfg.effective(None),

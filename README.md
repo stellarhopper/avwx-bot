@@ -10,11 +10,17 @@ All data comes from free government sources, [aviationweather.gov] and
 [api.weather.gov], so there are no API keys. METARs and TAFs work worldwide.
 Hazards, alerts and the mountain features cover the US.
 
+When no FB winds-aloft forecast is being published, winds aloft come from the
+GFS model through [Open-Meteo] (free for non-commercial use, CC BY 4.0) at the
+same sites and levels, and every card, brief and chat answer that uses them
+says so.
+
 > Not an official weather briefing. Use it for situational awareness, and get a
 > proper briefing before you fly.
 
 [aviationweather.gov]: https://aviationweather.gov/data/api/
 [api.weather.gov]: https://www.weather.gov/documentation/services-web-api
+[Open-Meteo]: https://open-meteo.com/
 
 ## Commands
 
@@ -268,7 +274,7 @@ restart, and a failure rolls back. See [`deploy/README.md`](deploy/README.md).
 
 | Path | What's there |
 | --- | --- |
-| `bot/sources/` | API clients: `awc.py` (aviationweather.gov), `nws.py` (api.weather.gov), the winds-aloft parser, and a shared HTTP cache |
+| `bot/sources/` | API clients: `awc.py` (aviationweather.gov), `nws.py` (api.weather.gov), `openmeteo.py` (model winds when there's no FB), the winds-aloft parser, and a shared HTTP cache |
 | `bot/wx/` | Flight category, density altitude, geometry and formatting. No network |
 | `bot/render/` | Pillow cards. Each returns PNG bytes |
 | `bot/cogs/` | The slash commands and background loops |

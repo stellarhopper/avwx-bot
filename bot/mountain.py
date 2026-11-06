@@ -99,6 +99,7 @@ class MountainBoard:
     density: list[DensityAltitude]
     weathercams_url: str | None
     problems: list[str] = field(default_factory=list)
+    winds_model: str | None = None  # model winds standing in for the FB
 
 
 def method(region: dict) -> dict:
@@ -144,7 +145,8 @@ def method(region: dict) -> dict:
         ],
         "data_sources": [
             "METARs from the stations on and either side of each pass (aviationweather.gov)",
-            "Winds and temperatures aloft, the FB forecast (aviationweather.gov)",
+            "Winds and temperatures aloft: the FB forecast (aviationweather.gov), or the GFS model "
+            "(Open-Meteo) when no FB is being published",
             "G-AIRMETs (aviationweather.gov)",
             "PIREPs (aviationweather.gov)",
             "The NWS Area Forecast Discussion (weather.gov)",
@@ -352,6 +354,7 @@ async def build(awc: Awc, nws: Nws, region: dict, cfg: dict, now: datetime | Non
         density=density,
         weathercams_url=region.get("weathercams_url"),
         problems=problems,
+        winds_model=forecast.model if forecast is not None and ridge_winds else None,
     )
 
 

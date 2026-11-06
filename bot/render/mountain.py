@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from .. import regions
+from ..sources import windsaloft
 from ..mountain import STATUS_LABELS, MountainBoard, PassStatus, method
 from ..wx import fmt
 from . import theme, winds
@@ -140,6 +141,17 @@ def legend(c: Canvas, y: float, board: MountainBoard, *, size: float = 10) -> fl
     return y + h
 
 
+def model_note(c: Canvas, y: float, model: str | None) -> float:
+    """The disclaimer under anything worked out from model winds."""
+    note = windsaloft.disclaimer(model)
+    if note is None:
+        return y
+    for line in c.wrap(f"⚠ {note}", WIDTH - 2 * PAD, size=10.5):
+        c.text(PAD, y + 7, line, size=10.5, fill=WARN, anchor="lm")
+        y += 15
+    return y
+
+
 def section_title(c: Canvas, y: float, title: str, note: str = "") -> float:
     c.text(PAD, y, title.upper(), style="bold", size=11, fill=MUTED)
     if note:
@@ -161,8 +173,9 @@ def _draw(c: Canvas, board: MountainBoard, tz, units) -> float:
     y = pass_rows(c, y, board.passes) + 10
     y = legend(c, y, board) + 16
     if board.ridge_winds:
-        y = section_title(c, y, "Ridge-level winds", "forecast, kt")
-        y = ridge_table(c, y, board, units) + 16
+        y = section_title(c, y, "Ridge-level winds", "GFS model, kt" if board.winds_model else "forecast, kt")
+        y = ridge_table(c, y, board, units) + 6
+        y = model_note(c, y, board.winds_model) + 10
     if board.density:
         y = section_title(c, y, "Density altitude", "mountain airports, now")
         y = density_row(c, y, board, units) + 16
@@ -220,11 +233,19 @@ def section(c: Canvas, y: float, board: MountainBoard, data) -> float:
                    fill=color if p.status in ("adverse", "marginal") else MUTED, anchor="lm")
     rows = (len(board.passes) + per_row - 1) // per_row
     y += rows * (chip_h + 6)
-    return legend(c, y, board, size=9.5)
+    y = legend(c, y, board, size=9.5)
+    # Pass-level winds and wave risk came from the model. Say so, unless the
+    # brief's winds section above already has.
+    winds = getattr(data, "winds", None)
+    if not board.winds_model or (winds is not None and winds.model):
+        return y
+    return model_note(c, y + 8, board.winds_model)
 
 
 def board_alt(board: MountainBoard) -> str:
     parts = [f"Mountain wave risk {board.wave.level}: {'; '.join(board.wave.reasons)}"]
     for p in board.passes:
         parts.append(f"{p.name} {STATUS_LABELS[p.status]}")
+    if board.winds_model:
+        parts.append(windsaloft.disclaimer(board.winds_model))
     return ". ".join(parts)
