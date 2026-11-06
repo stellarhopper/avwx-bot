@@ -12,7 +12,7 @@ from bot.sources.awc import Pirep
 from bot.store import Store
 from conftest import fixture_json
 from fakeapi import clients
-from fakes import FakeChannel, FakeGuild, FakeInteraction
+from fakes import FakeChannel, FakeGuild, FakeInteraction, FakeThread
 
 NOW = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc)
 
@@ -103,7 +103,7 @@ def make_bot():
     return types.SimpleNamespace(store=Store(":memory:"), awc=api.awc, nws=api.nws, http_client=api.http, guilds=[])
 
 
-async def test_brief_to_text_channel_is_one_message_with_raw_text():
+async def test_brief_to_text_channel_is_one_message_without_raw_text():
     bot = make_bot()
     channel = FakeChannel("weather")
     guild = FakeGuild([channel])
@@ -113,8 +113,8 @@ async def test_brief_to_text_channel_is_one_message_with_raw_text():
     assert posted.thread_id is None
     [msg] = channel.sent
     assert msg.content.startswith("**Morning brief")
-    assert "```" in msg.content and "METAR KBJC" in msg.content
-    assert msg.file.filename == "brief.png"
+    assert "```" not in msg.content and "METAR KBJC" not in msg.content
+    assert msg.file.filename == "brief.png" and "KBJC" in msg.file.description
     assert bot.store.brief_sent(guild.id, "2026-10-24")
 
 
@@ -131,8 +131,11 @@ async def test_brief_to_forum_makes_a_tagged_post_with_details_in_the_thread():
     assert [t.name for t in thread.applied_tags] == ["Brief"]
     texts = [m.content for m in thread.sent]
     assert texts[0].startswith("**Morning brief") and "```" not in texts[0]
-    assert any(t.startswith("**METARs**") for t in texts)
-    assert any(t.startswith("**Forecast discussion") for t in texts)
+    assert not any("METAR" in t or "```" in t for t in texts)
+    [afd] = [t for t in texts if t.startswith("**Forecast discussion")]
+    # Reflowed: one paragraph is one line, not NWS's 66-column wrapping.
+    body = afd.split(">>> ", 1)[1]
+    assert "\n" not in body and "pushing across the TAF sites at this time" in body
     # A bare /metar in this thread now means the brief's airports.
     assert bot.store.get_post_context(guild.id, thread.id).airports == ["KBJC", "KAPA"]
     # day=None: a manual post doesn't use up the scheduled one.
@@ -196,3 +199,27 @@ def test_pirep_message_fits_and_marks_notable():
 def test_raw_block_never_breaks_its_fences(limit):
     block = raw_block(["METAR " + "X" * 70] * 100, limit=limit)
     assert len(block) <= limit and block.startswith("```\n") and block.endswith("\n```")
+
+
+async def test_a_long_discussion_is_split_not_cut_off():
+    from datetime import datetime, timezone
+    from zoneinfo import ZoneInfo
+
+    from bot.briefing import Afd
+
+    bot = make_bot()
+    forum = FakeChannel("briefs", kind=discord.ChannelType.forum)
+    thread = FakeThread(forum, "Morning brief")
+    forum.threads.append(thread)
+    guild = FakeGuild([forum])
+    paragraphs = [f"Paragraph {n}: " + "gusty northwest winds through the afternoon " * 12 for n in range(8)]
+    text = "\n\n".join("\n".join(p[i:i + 66] for i in range(0, len(p), 66)) for p in paragraphs)
+    data = types.SimpleNamespace(
+        afd=Afd("BOU", datetime(2026, 10, 24, 6, 32, tzinfo=timezone.utc), text),
+        tz=ZoneInfo("America/Denver"),
+    )
+    await brief_cog.Briefs(bot).thread_details(guild, thread.id, data)
+    parts = [m.content for m in thread.sent if m.content.startswith(("**Forecast", ">>>"))]
+    assert len(parts) > 1 and all(len(t) <= 2000 for t in parts)
+    assert parts[0].startswith("**Forecast discussion — aviation** (NWS BOU, issued Sat 00:32)")
+    assert all("Paragraph %d:" % n in "".join(parts) for n in range(8))

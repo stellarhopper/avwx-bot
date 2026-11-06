@@ -13,8 +13,10 @@ from discord.ext import commands, tasks
 from .. import briefing, clock, context, guildcfg, hazards, mountain, posting, regions
 from ..render import brief as brief_render
 from ..render import winds as winds_render
+from ..sources import nws
 from ..sources.http import SourceError
 from ..wx import fmt
+from .chat import split_message
 from .wx import png_file, raw_block
 
 log = logging.getLogger(__name__)
@@ -93,12 +95,11 @@ class Briefs(commands.Cog):
         local = clock.now().astimezone(tz)
         title = f"Morning brief — {local.strftime('%a %-d %b')}"
         data, image = await self.build(cfg, airports, title=title)
-        raws = [a.metar.raw for a in data.airports if a.metar]
+        # No raw METAR or TAF text: the image and its alt text carry the
+        # reports, and /metar or /taf in the thread gives the raw text to
+        # anyone who wants it.
         content = f"**{title}**\n{brief_render.summary_line(data)}"
         channel = posting.resolve_channel(guild, int(cfg["brief"]["channel_id"]))
-        forum = posting.is_forum(channel)
-        if not forum and raws:
-            content += "\n" + raw_block(raws)
         tag = cfg["brief"].get("forum_tag_id")
         posted = await posting.post(
             self.bot.store,
@@ -118,16 +119,15 @@ class Briefs(commands.Cog):
         return posted
 
     async def thread_details(self, guild: discord.Guild, thread_id: int, data: briefing.BriefData) -> None:
-        """In a forum post there's room for the full text: raw reports and the discussion."""
-        raws = [a.metar.raw for a in data.airports if a.metar]
-        tafs = [a.taf.raw for a in data.airports if a.taf]
-        if raws:
-            await posting.reply_in_thread(guild, thread_id, "**METARs**\n" + raw_block(raws))
-        if tafs:
-            await posting.reply_in_thread(guild, thread_id, "**TAFs**\n" + raw_block(tafs))
+        """In a forum post there's room for the forecast discussion's aviation section."""
         if data.afd:
-            text = f"**Forecast discussion — aviation** (NWS {data.afd.office})\n>>> {data.afd.aviation}"
-            await posting.reply_in_thread(guild, thread_id, text[:2000])
+            issued = f", issued {fmt.local(data.afd.issued, data.tz, '%a %H:%M')}" if data.afd.issued else ""
+            head = f"**Forecast discussion — aviation** (NWS {data.afd.office}{issued})"
+            # Reflowed, so it wraps to the screen rather than at NWS's 66
+            # columns, and split across messages rather than cut off.
+            chunks = split_message(nws.reflow(data.afd.aviation), limit=1900 - len(head))
+            for i, chunk in enumerate(chunks):
+                await posting.reply_in_thread(guild, thread_id, (head + "\n" if i == 0 else "") + ">>> " + chunk)
         await posting.reply_in_thread(
             guild,
             thread_id,

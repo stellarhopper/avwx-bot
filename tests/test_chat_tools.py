@@ -108,3 +108,29 @@ async def test_handlers_treat_null_as_not_given():
     out, err = await call("takeoff_landing", {"tail": "N9999X", "airport": "KGNB", "weight_lb": 2600,
                                               "at_local": None, "runway": None, "surface": None})
     assert not err and out["inputs"]["surface"] == "paved"
+
+
+async def test_forecast_discussion_for_the_home_airport_by_default():
+    c = ctx()
+    c.config = {**c.config, "home_airports": ["KBJC", "KAPA"]}
+    out, err = await call("forecast_discussion", {"place": None, "section": "aviation"}, c)
+    assert not err
+    assert out["office"] == "BOU" and out["office_name"] == "Denver/Boulder CO"
+    assert out["covers"] == "KBJC" and out["issued"].startswith("Sat")
+    [aviation] = out["sections"]
+    assert aviation["title"].startswith("AVIATION")
+    assert "\n" not in aviation["text"]  # reflowed: one paragraph, one line
+
+
+async def test_forecast_discussion_all_sections_for_a_named_place():
+    out, err = await call("forecast_discussion", {"place": "Granby", "section": "all"})
+    assert not err and out["covers"] == "KGNB"
+    titles = [s["title"] for s in out["sections"]]
+    assert titles[0] == "KEY MESSAGES" and any(t.startswith("DISCUSSION") for t in titles)
+    key = out["sections"][0]["text"]
+    assert key.startswith("- Cooler weather") and key.count("\n- ") == 2  # list items kept apart
+
+
+async def test_forecast_discussion_needs_a_place_without_home_airports():
+    out, err = await call("forecast_discussion", {"place": None, "section": "aviation"})
+    assert err and "home airports" in out

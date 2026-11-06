@@ -26,6 +26,7 @@ from ..render import cards, theme
 from ..render import mountain as mountain_render
 from ..render import winds as winds_render
 from ..sources.awc import Awc
+from ..sources import nws as nws_text
 from ..sources.http import SourceError
 from ..sources.nws import Nws
 from ..wx import fmt, navlog, perf, runways, wb
@@ -207,6 +208,20 @@ DEFINITIONS = [
         {"tail": _TAIL, "manual": {"type": "string"}, "first_page": {"type": "integer"},
          "last_page": {"type": "integer"}},
         ["tail", "manual", "first_page", "last_page"],
+    ),
+    _tool(
+        "forecast_discussion",
+        "The latest NWS Area Forecast Discussion: the forecasters' own reasoning about the coming days, "
+        "from the Weather Forecast Office that covers a place (Denver/Boulder for the Front Range, Grand "
+        "Junction for the western slope). Give an airport, town, pass or coordinates; null means the "
+        "server's first home airport. `aviation` returns just the aviation section, usually what pilots "
+        "want; `all` returns every section. US only. When asked for the discussion, give it in the "
+        "forecasters' words or a faithful summary, never views it doesn't state.",
+        {
+            "place": {"type": "string", "description": "Where the discussion should cover."},
+            "section": {"type": "string", "enum": ["aviation", "all"]},
+        },
+        ["section"],
     ),
     _tool(
         "attach_card",
@@ -539,6 +554,47 @@ async def read_manual_pages(ctx: ToolContext, args: dict) -> list[dict]:
         raise ToolError(str(exc)) from None
 
 
+DISCUSSION_CLIP = 6000  # characters per section; a long one is still mostly there
+
+
+async def forecast_discussion(ctx: ToolContext, args: dict) -> dict:
+    section = args.get("section")
+    if section not in ("aviation", "all"):
+        raise ToolError("`section` must be aviation or all.")
+    place = _text(args, "place", required=False)
+    if place is None:
+        homes = ctx.config.get("home_airports") or []
+        if not homes:
+            raise ToolError("This server has no home airports set, so name a place.")
+        place = homes[0]
+    resolved = await _resolve(ctx, [place])
+    unclear = _unclear(resolved)
+    if unclear:
+        return unclear
+    point = resolved[0].point
+    office = await ctx.nws.office_for(point.lat, point.lon)
+    if not office:
+        raise ToolError(f"No NWS forecast office covers {point.label()}; forecast discussions are US only.")
+    discussion = await ctx.nws.discussion(office)
+    if discussion is None:
+        raise ToolError(f"NWS {office} has no current forecast discussion.")
+    parts = nws_text.sections(discussion.text)
+    if section == "aviation":
+        parts = [(title, body) for title, body in parts if title.upper().startswith("AVIATION")]
+    out = {
+        "office": office,
+        "office_name": nws_text.office_name(discussion.text),
+        "covers": point.label(),
+        "issued": summary.when(discussion.issued, ctx.tz),
+        "sections": [
+            {"title": title, "text": nws_text.reflow(body)[:DISCUSSION_CLIP]} for title, body in parts
+        ],
+    }
+    if not parts:
+        out["note"] = "This discussion has no aviation section; ask for `all` to see the rest."
+    return out
+
+
 async def attach_card(ctx: ToolContext, args: dict) -> dict:
     kind = args.get("kind")
     if kind not in ("metar", "taf", "winds", "mountain"):
@@ -604,6 +660,7 @@ HANDLERS = {
     "aircraft": aircraft,
     "search_manual": search_manual,
     "read_manual_pages": read_manual_pages,
+    "forecast_discussion": forecast_discussion,
     "attach_card": attach_card,
 }
 

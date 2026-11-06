@@ -129,6 +129,59 @@ def _polygons(geometry: dict | None) -> tuple[tuple[tuple[float, float], ...], .
     return ()
 
 
+_LIST_ITEM = re.compile(r"^(?:[-*•]|\d{1,2}[.)])\s+")
+_OFFICE_NAME = re.compile(r"^National Weather Service (.+)$", re.MULTILINE)
+
+
+def reflow(text: str) -> str:
+    """Undo the hard wrapping in NWS product text.
+
+    Products are wrapped at about 66 characters for teletype, so on a phone
+    each line breaks again partway across the screen. Lines are joined within
+    a paragraph, paragraphs stay apart, and list items (`- `, `* `, `1)`)
+    start their own lines, their indented continuations joined back on.
+    """
+    paragraphs = []
+    for para in re.split(r"\n\s*\n", text.strip()):
+        items: list[str] = []
+        for line in para.splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            if not items or _LIST_ITEM.match(line):
+                items.append(line)
+            else:
+                items[-1] += " " + line
+        if items:
+            paragraphs.append("\n".join(items))
+    return "\n\n".join(paragraphs)
+
+
+def sections(product_text: str) -> list[tuple[str, str]]:
+    """An AFD's sections as (title, body): "KEY MESSAGES", "DISCUSSION /Through
+    Friday/", "AVIATION /06Z TAFs.../" and so on, each without its "Issued
+    at" line or `&&` trailer."""
+    matches = list(_SECTION.finditer(product_text))
+    out = []
+    for i, match in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(product_text)
+        body = product_text[match.end():end].split("&&", 1)[0]
+        lines = body.strip().splitlines()
+        if lines and lines[0].lower().startswith("issued at"):
+            lines = lines[1:]
+        text = "\n".join(line.rstrip() for line in lines).strip()
+        title = product_text[match.start() + 1:match.end() - 3].strip()
+        if text:
+            out.append((title, text))
+    return out
+
+
+def office_name(product_text: str) -> str | None:
+    """"Denver/Boulder CO", from the product's header."""
+    match = _OFFICE_NAME.search(product_text)
+    return match.group(1).strip() if match else None
+
+
 def aviation_section(product_text: str) -> str | None:
     """The `.AVIATION...` section of an AFD, without its header or the `&&` trailer."""
     matches = list(_SECTION.finditer(product_text))
