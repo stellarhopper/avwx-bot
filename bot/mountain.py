@@ -1,11 +1,12 @@
 """Mountain-flying assessment: passes, ridge-level winds, wave risk, density altitude.
 
 These are **heuristics for awareness**, built from the rules of thumb taught in
-mountain-flying courses. They are not a go/no-go decision. The thresholds are
-collected here so they're easy to find and argue about:
+mountain-flying courses. Passes are rated Looks OK, Marginal or Adverse: words
+for the conditions, never for the decision, which is the pilot in command's.
+The thresholds are collected here so they're easy to find and argue about:
 
-* **Ridge-level wind.** For light aircraft, wind at mountaintop level of 25 kt
-  or more means don't cross. 15–24 kt means expect turbulence and downdrafts.
+* **Ridge-level wind.** Wind at mountaintop level of 25 kt or more is adverse
+  for light aircraft; 15–24 kt is marginal (expect turbulence and downdrafts).
   "Mountaintop level" is the first winds-aloft level at or above the pass.
 * **Mountain wave.** Wind blowing across the ridge (the region's
   `cross_from_deg`–`cross_to_deg` sector) at 12,000–18,000 ft. From 25 kt
@@ -14,8 +15,8 @@ collected here so they're easy to find and argue about:
   or moderate-or-worse turbulence in the region, and a forecast discussion
   that mentions wave or rotor.
 * **Pass weather.** The station on the pass decides most of it: IFR or LIFR, or
-  a thunderstorm, is no-go; MVFR or snow is marginal. A Sierra (mountains
-  obscured) or IFR G-AIRMET over the pass is no-go. IFR on either approach
+  a thunderstorm, is adverse; MVFR or snow is marginal. A Sierra (mountains
+  obscured) or IFR G-AIRMET over the pass is adverse. IFR on either approach
   side is marginal, because that is where you'd turn back to.
 """
 
@@ -34,8 +35,8 @@ from .sources.nws import Nws
 from .sources.windsaloft import Wind
 from .wx import geo
 
-RIDGE_CAUTION_KT = 15
-RIDGE_NO_GO_KT = 25
+RIDGE_MARGINAL_KT = 15
+RIDGE_ADVERSE_KT = 25
 WAVE_ELEVATED_KT = 25
 WAVE_HIGH_KT = 40
 OBSCURATION_RADIUS_NM = 5
@@ -45,8 +46,8 @@ HAZARD_RADIUS_NM = 30
 # Rabbit Ears, in Nov 2026) would otherwise rate its pass on that.
 MAX_OBS_AGE_MIN = 180
 
-STATUS_ORDER = ("go", "caution", "no-go")
-STATUS_LABELS = {"go": "Looks OK", "caution": "Caution", "no-go": "No-go", "unknown": "No data"}
+STATUS_ORDER = ("ok", "marginal", "adverse")
+STATUS_LABELS = {"ok": "Looks OK", "marginal": "Marginal", "adverse": "Adverse", "unknown": "No data"}
 
 _WAVE_WORDS = re.compile(r"\b(mountain wave|mtn wave|rotors?|lenticular|wave clouds?)\b", re.IGNORECASE)
 
@@ -68,7 +69,7 @@ class PassStatus:
         self.reasons.append((status, reason))
 
     def why(self, limit: int = 2) -> list[str]:
-        """The reasons behind the status, worst first: what made it no-go, not what was fine."""
+        """The reasons behind the status, worst first: what made it adverse, not what was fine."""
         worst = [r for st, r in self.reasons if st == self.status]
         return worst[:limit]
 
@@ -103,26 +104,36 @@ class MountainBoard:
 def method(region: dict) -> dict:
     """How the board is worked out, in words, from the same constants and
     region data the code uses, so an explanation can't drift from what it
-    does. For the chat, when a member asks what "No-go" means."""
+    does. The chat explains from it, and the pass board's legend shows it."""
     ridge = region.get("ridge") or {}
     start, end = ridge.get("cross_from_deg", 240), ridge.get("cross_to_deg", 320)
     levels = " and ".join(f"{a:,} ft" for a in ridge.get("levels_ft", [12000, 18000]))
-    labels = STATUS_LABELS
     return {
-        "nature": "Rules of thumb from mountain-flying courses, for awareness. Each pass gets the worst "
-                  "status any rule gives it; with no data at all it shows \"" + labels["unknown"] + "\".",
-        "pass_status_rules": [
-            f"{labels['no-go']}: the weather station on the pass reports IFR or LIFR, or a thunderstorm.",
-            f"{labels['caution']}: the station on the pass reports MVFR, snow or freezing precipitation, or "
-            f"gusts of {RIDGE_NO_GO_KT} kt or more.",
-            f"{labels['caution']}: an airport on either approach side (the way you'd turn back) reports IFR or LIFR.",
-            f"{labels['no-go']}: a G-AIRMET Sierra for mountain obscuration, or for IFR, within "
-            f"{OBSCURATION_RADIUS_NM} nm of the pass, in force now or within 3 hours.",
-            f"Wind at the first winds-aloft forecast level at or above the pass, from the forecast site the "
-            f"region file assigns it: {RIDGE_NO_GO_KT} kt or more is {labels['no-go']}, "
-            f"{RIDGE_CAUTION_KT}-{RIDGE_NO_GO_KT - 1} kt is {labels['caution']}.",
-            f"{labels['go']}: none of the above, with at least some data for the pass.",
+        "nature": "Rules of thumb from mountain-flying courses, describing conditions for awareness; the "
+                  "decision is the pilot in command's. Each pass gets the worst status any rule gives it.",
+        "statuses": [
+            {"status": "ok", "label": STATUS_LABELS["ok"], "conditions": [
+                "None of the conditions below, with current data for the pass",
+            ]},
+            {"status": "marginal", "label": STATUS_LABELS["marginal"], "conditions": [
+                f"The station on the pass reports MVFR, snow or freezing precipitation, or gusts of "
+                f"{RIDGE_ADVERSE_KT} kt or more",
+                "An airport on either approach side (the way you'd turn back) reports IFR or LIFR",
+                f"{RIDGE_MARGINAL_KT}–{RIDGE_ADVERSE_KT - 1} kt at pass level",
+            ]},
+            {"status": "adverse", "label": STATUS_LABELS["adverse"], "conditions": [
+                "The station on the pass reports IFR, LIFR or a thunderstorm",
+                f"A mountain-obscuration or IFR G-AIRMET within {OBSCURATION_RADIUS_NM} nm, now or in the "
+                "next 3 hours",
+                f"{RIDGE_ADVERSE_KT} kt or more at pass level",
+            ]},
+            {"status": "unknown", "label": STATUS_LABELS["unknown"], "conditions": [
+                f"No report under {MAX_OBS_AGE_MIN // 60} hours old from the pass or either approach side, "
+                "and none of the conditions above",
+            ]},
         ],
+        "pass_level_wind": "The first winds-aloft forecast level at or above the pass, from the forecast "
+                           "site the region file assigns it.",
         "wave_risk_rules": [
             f"Wind from {start:03d}-{end:03d}° (across the ridge) at {levels} at the region's winds-aloft "
             f"sites: {WAVE_ELEVATED_KT} kt or more is elevated, {WAVE_HIGH_KT} kt or more is high.",
@@ -165,30 +176,30 @@ def assess_pass(p: PassStatus, *, obscured_by: list[str], ridge: Wind | None) ->
         cat = m.flight_category
         wx = m.weather.upper()
         if cat in ("IFR", "LIFR"):
-            p.worsen("no-go", f"{m.station} {cat}")
+            p.worsen("adverse", f"{m.station} {cat}")
         elif cat == "MVFR":
-            p.worsen("caution", f"{m.station} MVFR")
+            p.worsen("marginal", f"{m.station} MVFR")
         else:
-            p.worsen("go", f"{m.station} {cat}")
+            p.worsen("ok", f"{m.station} {cat}")
         if "TS" in wx:
-            p.worsen("no-go", f"thunderstorm at {m.station}")
+            p.worsen("adverse", f"thunderstorm at {m.station}")
         elif "SN" in wx or "FZ" in wx:
-            p.worsen("caution", f"{wx.strip()} at {m.station}")
-        if m.wind_gust and m.wind_gust >= RIDGE_NO_GO_KT:
-            p.worsen("caution", f"gusts {m.wind_gust} kt on the pass")
+            p.worsen("marginal", f"{wx.strip()} at {m.station}")
+        if m.wind_gust and m.wind_gust >= RIDGE_ADVERSE_KT:
+            p.worsen("marginal", f"gusts {m.wind_gust} kt on the pass")
     for side, sm in p.sides.items():
         if sm is not None and sm.flight_category in ("IFR", "LIFR"):
-            p.worsen("caution", f"{side} side {sm.station} {sm.flight_category}")
+            p.worsen("marginal", f"{side} side {sm.station} {sm.flight_category}")
         elif sm is not None and p.status == "unknown":
-            p.worsen("go", f"{side} side {sm.station} {sm.flight_category}")
+            p.worsen("ok", f"{side} side {sm.station} {sm.flight_category}")
     for what in obscured_by:
-        p.worsen("no-go", what)
+        p.worsen("adverse", what)
     p.ridge_wind = ridge
     if ridge is not None and not ridge.light_variable:
-        if ridge.speed_kt >= RIDGE_NO_GO_KT:
-            p.worsen("no-go", f"{ridge.speed_kt} kt at {ridge.altitude_ft // 1000}k")
-        elif ridge.speed_kt >= RIDGE_CAUTION_KT:
-            p.worsen("caution", f"{ridge.speed_kt} kt at {ridge.altitude_ft // 1000}k")
+        if ridge.speed_kt >= RIDGE_ADVERSE_KT:
+            p.worsen("adverse", f"{ridge.speed_kt} kt at {ridge.altitude_ft // 1000}k")
+        elif ridge.speed_kt >= RIDGE_MARGINAL_KT:
+            p.worsen("marginal", f"{ridge.speed_kt} kt at {ridge.altitude_ft // 1000}k")
     return p
 
 

@@ -38,7 +38,7 @@ async def test_mountain_plan_attention_and_fuel():
     assert [f["to"] for f in out["flights"]] == ["KGNB", "KSBS", "KBJC"]
     assert out["reserve_minutes"] == 45 and out["flights"][0]["fuel_gal"]["reserve"] == 7.9
     text = " | ".join(out["attention"])
-    assert "Rollins Pass: caution" in text and "Mountain wave risk elevated" in text
+    assert "Rollins Pass: marginal" in text and "Mountain wave risk elevated" in text
     assert "less than 2,000 ft above Rollins Pass" in text
     assert out["departure"] == "Sat 00:45 MDT (24 0645Z)"
 
@@ -141,10 +141,12 @@ async def test_mountain_passes_returns_the_board_and_how_it_is_worked_out():
     assert not err
     assert len(out["passes"]) == 16
     rollins = next(p for p in out["passes"] if p["pass"] == "Rollins Pass")
-    assert rollins["status"] in ("Looks OK", "Caution", "No-go", "No data") and rollins["reasons"]
+    assert rollins["status"] in ("Looks OK", "Marginal", "Adverse", "No data") and rollins["reasons"]
     method = out["method"]
-    assert any("25 kt or more is No-go" in r for r in method["pass_status_rules"])
-    assert any("G-AIRMET Sierra" in r for r in method["pass_status_rules"])
+    statuses = {s["label"]: s["conditions"] for s in method["statuses"]}
+    assert list(statuses) == ["Looks OK", "Marginal", "Adverse", "No data"]
+    assert "25 kt or more at pass level" in statuses["Adverse"]
+    assert any("G-AIRMET" in c for c in statuses["Adverse"])
     assert any("aviationweather.gov" in s for s in method["data_sources"])
 
 
@@ -158,6 +160,7 @@ async def test_mountain_passes_by_name():
 def test_the_method_follows_the_thresholds(monkeypatch):
     from bot import mountain, regions
 
-    monkeypatch.setattr(mountain, "RIDGE_NO_GO_KT", 30)
-    rules = " ".join(mountain.method(regions.get("co_front_range"))["pass_status_rules"])
-    assert "30 kt or more is No-go" in rules and "15-29 kt is Caution" in rules
+    monkeypatch.setattr(mountain, "RIDGE_ADVERSE_KT", 30)
+    statuses = {s["status"]: s["conditions"] for s in mountain.method(regions.get("co_front_range"))["statuses"]}
+    assert "30 kt or more at pass level" in statuses["adverse"]
+    assert "15–29 kt at pass level" in statuses["marginal"]

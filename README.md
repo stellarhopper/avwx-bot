@@ -58,10 +58,12 @@ Rollins and Berthoud to Wolf Creek and Raton. For each pass the file lists:
 
 The board then shows:
 
-- **Pass status** (looks OK / caution / no-go). It's based on the station on
-  the pass, mountain-obscuration and IFR G-AIRMETs over the pass, the approach
-  airports, and the forecast wind at the first level at or above the pass:
-  15 kt is caution, 25 kt is no-go.
+- **Pass status** (Looks OK / Marginal / Adverse). The words describe the
+  conditions, not a decision, which stays with the pilot in command. It's
+  based on the station on the pass, mountain-obscuration and IFR G-AIRMETs
+  over the pass, the approach airports, and the forecast wind at the first
+  level at or above the pass: 15 kt is marginal, 25 kt is adverse. The board
+  and the brief always show what each status means.
 - **Mountain-wave risk** (low / elevated / high). It comes from flow across the
   ridge at 12,000–18,000 ft: from the 240–320° sector at 25 kt or more, and
   high from 40 kt. It's also raised by Tango G-AIRMETs for wave, by turbulence
@@ -70,8 +72,8 @@ The board then shows:
   the mountain airports.
 
 The thresholds are rules of thumb from mountain-flying courses, collected at
-the top of [`bot/mountain.py`](bot/mountain.py). They're there for awareness,
-not as a go/no-go decision. To add a region, add another file in
+the top of [`bot/mountain.py`](bot/mountain.py). They describe conditions for
+awareness; the decision stays with the pilot. To add a region, add another file in
 `data/regions/`; the configurator picks it up automatically.
 
 ## Configuring a server

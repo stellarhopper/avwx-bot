@@ -40,24 +40,24 @@ def status(on_pass=None, sides=None, obscured=(), ridge=None) -> mountain.PassSt
 
 
 def test_pass_go_caution_no_go():
-    assert status(metar()).status == "go"
-    assert status(metar(fltCat="MVFR")).status == "caution"
-    assert status(metar(fltCat="IFR")).status == "no-go"
-    assert status(metar(wxString="TSRA")).status == "no-go"
-    assert status(metar(), obscured=["mountains obscured (G-AIRMET)"]).status == "no-go"
+    assert status(metar()).status == "ok"
+    assert status(metar(fltCat="MVFR")).status == "marginal"
+    assert status(metar(fltCat="IFR")).status == "adverse"
+    assert status(metar(wxString="TSRA")).status == "adverse"
+    assert status(metar(), obscured=["mountains obscured (G-AIRMET)"]).status == "adverse"
     assert status().status == "unknown"
 
 
 def test_pass_ridge_wind_thresholds():
-    assert status(metar(), ridge=Wind(12000, 270, 14, 0)).status == "go"
-    assert status(metar(), ridge=Wind(12000, 270, 15, 0)).status == "caution"
+    assert status(metar(), ridge=Wind(12000, 270, 14, 0)).status == "ok"
+    assert status(metar(), ridge=Wind(12000, 270, 15, 0)).status == "marginal"
     no_go = status(metar(), ridge=Wind(12000, 270, 25, 0))
-    assert no_go.status == "no-go" and no_go.why() == ["25 kt at 12k"]
+    assert no_go.status == "adverse" and no_go.why() == ["25 kt at 12k"]
 
 
 def test_ifr_on_an_approach_side_is_caution_and_explained():
     s = status(metar(), sides={"east": metar(icaoId="KBJC", fltCat="IFR")})
-    assert s.status == "caution" and s.why() == ["east side KBJC IFR"]
+    assert s.status == "marginal" and s.why() == ["east side KBJC IFR"]
 
 
 def winds(direction, speed):
@@ -87,7 +87,7 @@ async def test_build_from_fixtures():
     api = clients()
     board = await mountain.build(api.awc, api.nws, REGION, guildcfg.effective(None), now=NOW)
     assert len(board.passes) == len(REGION["passes"])
-    assert {p.status for p in board.passes} <= {"go", "caution", "no-go", "unknown"}
+    assert {p.status for p in board.passes} <= {"ok", "marginal", "adverse", "unknown"}
     assert set(board.ridge_winds) == {"DEN", "GJT", "PUB", "ALS"}
     assert board.wave.level == "elevated"  # the fixture's Tango and wave PIREPs
     assert any(d.station == "KLXV" for d in board.density)
@@ -142,12 +142,12 @@ def test_each_pass_box_gives_the_reason_for_its_status():
 
     p = mountain.PassStatus("rollins", "Rollins Pass", 11671)
     assert chip_reason(p) == "No data"
-    p.worsen("no-go", "mountains obscured (G-AIRMET)")
-    p.worsen("no-go", "IFR (G-AIRMET)")
+    p.worsen("adverse", "mountains obscured (G-AIRMET)")
+    p.worsen("adverse", "IFR (G-AIRMET)")
     assert chip_reason(p) == "Mountains obscured (G-AIRMET) +1"
     q = mountain.PassStatus("kenosha", "Kenosha Pass", 10001)
-    q.worsen("go", "K4BM VFR")
-    q.worsen("caution", "18 kt at 12k")
+    q.worsen("ok", "K4BM VFR")
+    q.worsen("marginal", "18 kt at 12k")
     assert chip_reason(q) == "18 kt at 12k"  # the deciding reason, not the fine one
 
 

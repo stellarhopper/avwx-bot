@@ -12,7 +12,7 @@ it. The thresholds are rules of thumb, collected here to be argued about:
   maximum (15 kt if no aircraft is known); any tailwind on the best runway.
 * Density altitude of 8,000 ft or more, or 2,000 ft or more above the field.
 * Hazards and NWS alerts along the route; notable PIREPs; passes at caution
-  or no-go; mountain wave risk elevated or high.
+  or adverse; mountain wave risk elevated or high.
 * Cruise less than 2,000 ft above the highest known point on the route.
 * Wind at cruise of 30 kt or more.
 * A flight needing more fuel, with reserve, than the aircraft carries.
@@ -191,7 +191,7 @@ def route(rw: RouteWeather, tz, *, aircraft=None, now: datetime) -> dict:
         attention.append(f"{len(rw.pireps)} notable PIREP(s) near the route (turbulence, icing or wave)")
     passes = [{"pass": p.name, "elevation_ft": p.elevation_ft, "status": p.status, "why": p.why()} for p in rw.passes]
     for p in rw.passes:
-        if p.status in ("caution", "no-go"):
+        if p.status in ("marginal", "adverse"):
             attention.append(f"{p.name}: {p.status} now ({'; '.join(p.why())})")
     if rw.wave and rw.wave.level in ("elevated", "high"):
         attention.append(f"Mountain wave risk {rw.wave.level}: {'; '.join(rw.wave.reasons)}")

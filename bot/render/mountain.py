@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
-from ..mountain import STATUS_LABELS, MountainBoard, PassStatus
+from .. import regions
+from ..mountain import STATUS_LABELS, MountainBoard, PassStatus, method
 from ..wx import fmt
 from . import theme, winds
 from .theme import BORDER, DANGER, FAINT, MUTED, OK, PANEL, PANEL_HI, TEXT, WARN, Canvas
 
 WIDTH = 720
 PAD = 16
-STATUS_COLORS = {"go": OK, "caution": WARN, "no-go": DANGER, "unknown": theme.UNKNOWN_CATEGORY}
+STATUS_COLORS = {"ok": OK, "marginal": WARN, "adverse": DANGER, "unknown": theme.UNKNOWN_CATEGORY}
 WAVE_LABELS = {"low": "Low", "elevated": "Elevated", "high": "High", "unknown": "Unknown"}
 RIDGE_LEVELS = (9000, 12000, 18000)
 
@@ -56,7 +57,7 @@ def pass_rows(c: Canvas, y: float, passes: list[PassStatus]) -> float:
         c.text(PAD + 210, ry + 7, _pass_obs(p)[:72], size=10.5, fill=TEXT)
         why = p.why()
         note = STATUS_LABELS[p.status] + (": " + "; ".join(why) if why else "")
-        c.text(PAD + 210, ry + 23, note[:80], size=10, fill=color if p.status != "go" else MUTED)
+        c.text(PAD + 210, ry + 23, note[:80], size=10, fill=color if p.status != "ok" else MUTED)
         if p.ridge_wind and not p.ridge_wind.light_variable:
             w = p.ridge_wind
             c.text(WIDTH - PAD - 12, ry + 7, f"{w.direction:03d}/{w.speed_kt}", style="mono-bold", size=10.5,
@@ -111,6 +112,34 @@ def density_row(c: Canvas, y: float, board: MountainBoard, units) -> float:
     return y + rows * 52 - 8
 
 
+def legend(c: Canvas, y: float, board: MountainBoard, *, size: float = 10) -> float:
+    """What each status means, always shown, whatever the passes are rated
+    today: a coloured row per status with its conditions, from method()."""
+    region = regions.get(board.region_id) or {"id": board.region_id}
+    rows = []
+    label_w = 78
+    text_w = WIDTH - 2 * PAD - 24 - label_w - 12
+    for entry in method(region)["statuses"]:
+        # One sentence per status: the conditions after the first continue it.
+        text = "; ".join(cond if i == 0 else cond[0].lower() + cond[1:]
+                         for i, cond in enumerate(entry["conditions"]))
+        lines = c.wrap(text + ".", text_w, size=size)
+        rows.append((entry, lines))
+    line_h = size + 4
+    h = 12 + sum(max(1, len(lines)) * line_h + 6 for _, lines in rows)
+    c.rect(PAD, y, WIDTH - 2 * PAD, h, fill=PANEL, radius=8)
+    ry = y + 8
+    for entry, lines in rows:
+        color = STATUS_COLORS[entry["status"]]
+        c.circle(PAD + 16, ry + line_h / 2, 4.5, fill=color)
+        c.text(PAD + 28, ry + line_h / 2, entry["label"], style="semibold", size=size, fill=color, anchor="lm")
+        for i, line in enumerate(lines):
+            c.text(PAD + 28 + label_w, ry + i * line_h + line_h / 2, line, size=size,
+                   fill=TEXT, anchor="lm")
+        ry += max(1, len(lines)) * line_h + 6
+    return y + h
+
+
 def section_title(c: Canvas, y: float, title: str, note: str = "") -> float:
     c.text(PAD, y, title.upper(), style="bold", size=11, fill=MUTED)
     if note:
@@ -129,7 +158,8 @@ def _draw(c: Canvas, board: MountainBoard, tz, units) -> float:
     y = PAD + 58
     y = wave_banner(c, y, board) + 16
     y = section_title(c, y, "Passes", "status · on-pass observation · wind at pass level")
-    y = pass_rows(c, y, board.passes) + 16
+    y = pass_rows(c, y, board.passes) + 10
+    y = legend(c, y, board) + 16
     if board.ridge_winds:
         y = section_title(c, y, "Ridge-level winds", "forecast, kt")
         y = ridge_table(c, y, board, units) + 16
@@ -140,7 +170,7 @@ def _draw(c: Canvas, board: MountainBoard, tz, units) -> float:
         c.text(PAD, y, f"⚠ {problem}", size=10.5, fill=WARN)
         y += 16
     c.line([(PAD, y + 4), (WIDTH - PAD, y + 4)], fill=BORDER)
-    c.text(PAD, y + 12, "Heuristics for awareness, not a go/no-go decision. Check the cams and get a briefing.",
+    c.text(PAD, y + 12, "Rules of thumb for awareness; the decision is the pilot's. Check the cams and get a briefing.",
            size=10, fill=FAINT)
     return y + 34
 
@@ -187,9 +217,10 @@ def section(c: Canvas, y: float, board: MountainBoard, data) -> float:
         reason = chip_reason(p)
         if reason:
             c.text(x + 26, cy + 30, _fit(c, reason, chip_w - 36, size=9), size=9,
-                   fill=color if p.status in ("no-go", "caution") else MUTED, anchor="lm")
+                   fill=color if p.status in ("adverse", "marginal") else MUTED, anchor="lm")
     rows = (len(board.passes) + per_row - 1) // per_row
-    return y + rows * (chip_h + 6) - 6
+    y += rows * (chip_h + 6)
+    return legend(c, y, board, size=9.5)
 
 
 def board_alt(board: MountainBoard) -> str:

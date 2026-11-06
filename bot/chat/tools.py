@@ -225,7 +225,7 @@ DEFINITIONS = [
     ),
     _tool(
         "mountain_passes",
-        "The mountain pass board as it stands now: each pass's status (Looks OK, Caution, No-go, No data) "
+        "The mountain pass board as it stands now: each pass's status (Looks OK, Marginal, Adverse, No data) "
         "with the reasons, the observation on and either side of it, the wind at pass level, and the "
         "mountain wave risk. Also returns `method`: the rules behind the statuses and the data they use. "
         "Use it for questions about passes, wave, or what the statuses mean. `passes` filters by name; "
@@ -576,7 +576,7 @@ async def mountain_passes(ctx: ToolContext, args: dict) -> dict:
         if not passes:
             raise ToolError(f"No pass by that name. Passes: {', '.join(p.name for p in board.passes)}.")
     attention = [f"{p.name}: {mountain.STATUS_LABELS[p.status]} ({'; '.join(p.why())})"
-                 for p in passes if p.status in ("caution", "no-go")]
+                 for p in passes if p.status in ("marginal", "adverse")]
     if board.wave.level in ("elevated", "high"):
         attention.append(f"Mountain wave risk {board.wave.level}: {'; '.join(board.wave.reasons)}")
     attention += [f"Missing data: {problem}" for problem in board.problems]
