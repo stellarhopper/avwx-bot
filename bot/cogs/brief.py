@@ -120,14 +120,8 @@ class Briefs(commands.Cog):
 
     async def thread_details(self, guild: discord.Guild, thread_id: int, data: briefing.BriefData) -> None:
         """In a forum post there's room for the forecast discussion's aviation section."""
-        if data.afd:
-            issued = f", issued {fmt.local(data.afd.issued, data.tz, '%a %H:%M')}" if data.afd.issued else ""
-            head = f"**Forecast discussion — aviation** (NWS {data.afd.office}{issued})"
-            # Reflowed, so it wraps to the screen rather than at NWS's 66
-            # columns, and split across messages rather than cut off.
-            chunks = split_message(nws.reflow(data.afd.aviation), limit=1900 - len(head))
-            for i, chunk in enumerate(chunks):
-                await posting.reply_in_thread(guild, thread_id, (head + "\n" if i == 0 else "") + ">>> " + chunk)
+        for text in afd_messages(data):
+            await posting.reply_in_thread(guild, thread_id, text)
         await posting.reply_in_thread(
             guild,
             thread_id,
@@ -184,11 +178,13 @@ class Briefs(commands.Cog):
             return
         await interaction.response.defer(thinking=True)
         data, image = await self.build(ctx.config, ids, title="Weather brief")
-        raws = [a.metar.raw for a in data.airports if a.metar]
-        content = brief_render.summary_line(data)
-        if raws:
-            content += "\n" + raw_block(raws)
-        await interaction.followup.send(content[:2000], file=png_file(image, "brief.png", brief_render.alt_text(data)))
+        # The same as the morning brief: the image, the summary line, then the
+        # forecast discussion as text. No raw reports; /metar and /taf give those.
+        await interaction.followup.send(
+            brief_render.summary_line(data)[:2000], file=png_file(image, "brief.png", brief_render.alt_text(data))
+        )
+        for text in afd_messages(data):
+            await interaction.followup.send(text)
 
     @app_commands.command(name="winds", description="Winds and temperatures aloft")
     @app_commands.describe(where="An airport (nearest forecast site is used) or a winds-aloft site such as DEN")
@@ -242,6 +238,19 @@ class Briefs(commands.Cog):
         await interaction.response.defer(thinking=True)
         reps = await self.bot.awc.pireps(ids[0], radius, hours)
         await interaction.followup.send(pirep_message(ids[0], radius, hours, reps, ctx.tz))
+
+
+def afd_messages(data: briefing.BriefData) -> list[str]:
+    """The forecast discussion's aviation section as Discord messages: one
+    heading, then the text reflowed so it wraps to the screen rather than at
+    NWS's 66 columns, split across messages rather than cut off. The morning
+    brief and /brief both post it."""
+    if not data.afd:
+        return []
+    issued = f", issued {fmt.local(data.afd.issued, data.tz, '%a %H:%M')}" if data.afd.issued else ""
+    head = f"**Forecast discussion — aviation** (NWS {data.afd.office}{issued})"
+    chunks = split_message(nws.reflow(data.afd.aviation), limit=1900 - len(head))
+    return [(head + "\n" if i == 0 else "") + ">>> " + chunk for i, chunk in enumerate(chunks)]
 
 
 def pirep_message(center: str, radius: int, hours: int, reps, tz) -> str:

@@ -172,8 +172,14 @@ async def test_brief_command_uses_home_airports(monkeypatch):
     cog = brief_cog.Briefs(bot)
     i = FakeInteraction(guild)
     await cog.brief.callback(cog, i)
-    assert "KDEN VFR" in i.reply
-    assert i.last["file"].filename == "brief.png"
+    (first, first_kw), *rest = [(content, kw) for kind, content, kw in i.record if kind == "followup"]
+    # Like the morning brief: image and summary, no raw reports...
+    assert "KDEN VFR" in first and "```" not in first and "METAR" not in first
+    assert first_kw["file"].filename == "brief.png"
+    # ...then the forecast discussion, reflowed.
+    assert rest and rest[0][0].startswith("**Forecast discussion — aviation** (NWS BOU")
+    body = rest[0][0].split(">>> ", 1)[1]
+    assert "\n" not in body and "pushing across the TAF sites" in body
 
 
 async def test_winds_command_by_airport_and_by_site():
