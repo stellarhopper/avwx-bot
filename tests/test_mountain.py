@@ -135,3 +135,31 @@ async def test_brief_includes_mountain_only_when_enabled():
     off = guildcfg.effective({"schema_version": 1, "home_airports": ["KBJC"], "brief": {"include": {"mountain": True}}})
     data, _ = await cog.build(off, ["KBJC"], title="T")
     assert data.mountain is None
+
+
+def test_each_pass_box_gives_the_reason_for_its_status():
+    from bot.render.mountain import chip_reason
+
+    p = mountain.PassStatus("rollins", "Rollins Pass", 11671)
+    assert chip_reason(p) == "No data"
+    p.worsen("no-go", "mountains obscured (G-AIRMET)")
+    p.worsen("no-go", "IFR (G-AIRMET)")
+    assert chip_reason(p) == "Mountains obscured (G-AIRMET) +1"
+    q = mountain.PassStatus("kenosha", "Kenosha Pass", 10001)
+    q.worsen("go", "K4BM VFR")
+    q.worsen("caution", "18 kt at 12k")
+    assert chip_reason(q) == "18 kt at 12k"  # the deciding reason, not the fine one
+
+
+def test_mountain_data_failures_reach_the_brief_warnings():
+    import types
+
+    from bot.render.brief import problems
+
+    board = types.SimpleNamespace(problems=["METARs: aviationweather.gov is having trouble (HTTP 502)."])
+    data = types.SimpleNamespace(problems=["Winds aloft: aviationweather.gov is having trouble (HTTP 502)."],
+                                 mountain=board)
+    assert problems(data) == [
+        "Winds aloft: aviationweather.gov is having trouble (HTTP 502).",
+        "Mountain data — METARs: aviationweather.gov is having trouble (HTTP 502).",
+    ]

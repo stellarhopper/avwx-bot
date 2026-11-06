@@ -210,12 +210,23 @@ def _draw(c: Canvas, data: BriefData, radius: int) -> float:
     if data.afd is not None or "Forecast discussion" in " ".join(data.problems):
         y = afd_section(c, y, data) + 18
 
-    for problem in data.problems:
+    for problem in problems(data):
         c.text(PAD, y, f"⚠ {problem}", size=10.5, fill=WARN)
         y += 16
     c.line([(PAD, y + 4), (WIDTH - PAD, y + 4)], fill=BORDER)
     c.text(PAD, y + 12, "aviationweather.gov · weather.gov — for awareness, not an official briefing", size=10, fill=FAINT)
     return y + 34
+
+
+def problems(data: BriefData) -> list[str]:
+    """Every source that failed, the mountain section's included. Its feeds
+    are fetched separately, so without this a failure there went unreported,
+    leaving a pass with no data looking like one with bad weather."""
+    out = list(data.problems)
+    board = data.mountain
+    if board is not None:
+        out += [f"Mountain data — {p}" for p in getattr(board, "problems", [])]
+    return out
 
 
 def summary_line(data: BriefData) -> str:

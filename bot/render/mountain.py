@@ -145,23 +145,51 @@ def _draw(c: Canvas, board: MountainBoard, tz, units) -> float:
     return y + 34
 
 
+def chip_reason(p: PassStatus) -> str:
+    """The deciding reason for a pass's status, for its box in the brief:
+    "Mountains obscured (G-AIRMET)", "28 kt at 12k", or "No data". Without it
+    a real advisory and a missing feed both read as a bare status."""
+    if p.status == "unknown":
+        return "No data"
+    reasons = p.why(limit=4)
+    if not reasons:
+        return ""
+    text = reasons[0][0].upper() + reasons[0][1:]
+    return text + (f" +{len(reasons) - 1}" if len(reasons) > 1 else "")
+
+
+def _fit(c: Canvas, text: str, width: float, *, size: float) -> str:
+    """`text` shortened with an ellipsis to fit `width`."""
+    if c.text_width(text, size=size) <= width:
+        return text
+    while text and c.text_width(text + "…", size=size) > width:
+        text = text[:-1]
+    return text.rstrip() + "…"
+
+
 def section(c: Canvas, y: float, board: MountainBoard, data) -> float:
-    """The brief's compact version: wave risk, then passes as status chips."""
+    """The brief's compact version: wave risk, then a box per pass with its
+    status and the reason for it."""
     y = section_title(c, y, "Mountain flying", board.region_name)
     y = wave_banner(c, y, board, compact=True) + 8
     per_row = 3
     chip_w = (WIDTH - 2 * PAD - (per_row - 1) * 8) / per_row
+    chip_h = 42
     for i, p in enumerate(board.passes):
         col, row = i % per_row, i // per_row
         x = PAD + col * (chip_w + 8)
-        cy = y + row * 34
+        cy = y + row * (chip_h + 6)
         color = STATUS_COLORS[p.status]
-        c.rect(x, cy, chip_w, 28, fill=PANEL, radius=8)
+        c.rect(x, cy, chip_w, chip_h, fill=PANEL, radius=8)
         c.circle(x + 14, cy + 14, 5, fill=color)
         c.text(x + 26, cy + 14, p.name, style="semibold", size=10.5, anchor="lm")
         c.text(x + chip_w - 10, cy + 14, STATUS_LABELS[p.status], size=10, fill=color, anchor="rm")
+        reason = chip_reason(p)
+        if reason:
+            c.text(x + 26, cy + 30, _fit(c, reason, chip_w - 36, size=9), size=9,
+                   fill=color if p.status in ("no-go", "caution") else MUTED, anchor="lm")
     rows = (len(board.passes) + per_row - 1) // per_row
-    return y + rows * 34 - 6
+    return y + rows * (chip_h + 6) - 6
 
 
 def board_alt(board: MountainBoard) -> str:
