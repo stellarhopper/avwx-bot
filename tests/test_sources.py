@@ -173,3 +173,17 @@ async def test_nws_hourly_forecast():
     first = hours[0]
     assert first.temp_c == 0.6 and first.wind_dir == 90 and first.wind_kt == 3
     assert first.end - first.start == (hours[1].start - first.start)
+
+
+def test_discussion_sections_from_offices_that_title_them_with_a_comma():
+    # Salt Lake City's style, as published on 5 Nov 2026.
+    text = (
+        "Area Forecast Discussion\nNational Weather Service Salt Lake City UT\n\n"
+        ".KEY MESSAGES...\n\n- Dry and mild.\n\n&&\n\n"
+        ".DISCUSSION...A weak trough is centered near the\nfour corners.\n\n&&\n\n"
+        ".AVIATION, Issued 419 PM MST Thu Nov 5 2026...\nKSLC...VFR through the period with\nlight northwest winds.\n\n&&\n\n"
+        ".SLC WATCHES/WARNINGS/ADVISORIES...\nUT...None.\n&&\n\nAVIATION...Mahan\n"
+    )
+    assert [t for t, _ in nws.sections(text)] == ["KEY MESSAGES", "DISCUSSION", "AVIATION", "SLC WATCHES/WARNINGS/ADVISORIES"]
+    assert nws.aviation_section(text) == "KSLC...VFR through the period with\nlight northwest winds."
+    assert nws.office_name(text) == "Salt Lake City UT"

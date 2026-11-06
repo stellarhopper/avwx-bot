@@ -31,7 +31,9 @@ _COMPASS = {d: i * 22.5 for i, d in enumerate(
 _MPH = re.compile(r"(\d+)\s*mph")
 KT_PER_MPH = 0.868976
 
-_SECTION = re.compile(r"^\.([A-Z][A-Z /]+?)(?:\s*/[^\n]*?)?\.\.\.", re.MULTILINE)
+# A section header: ".AVIATION...", ".AVIATION /06Z TAFs.../...", or, from
+# offices like Salt Lake City, ".AVIATION, Issued 419 PM MST Thu Nov 5 2026...".
+_SECTION = re.compile(r"^\.([A-Z][A-Z /]+?)(?:\s*[/,][^\n]*?)?\.\.\.", re.MULTILINE)
 
 
 def _iso(text: str | None) -> datetime | None:
@@ -170,7 +172,8 @@ def sections(product_text: str) -> list[tuple[str, str]]:
         if lines and lines[0].lower().startswith("issued at"):
             lines = lines[1:]
         text = "\n".join(line.rstrip() for line in lines).strip()
-        title = product_text[match.start() + 1:match.end() - 3].strip()
+        # The issue time is shown separately; keep only the section's name.
+        title = re.sub(r",\s*Issued\b.*$", "", product_text[match.start() + 1:match.end() - 3]).strip()
         if text:
             out.append((title, text))
     return out
