@@ -134,3 +134,30 @@ async def test_forecast_discussion_all_sections_for_a_named_place():
 async def test_forecast_discussion_needs_a_place_without_home_airports():
     out, err = await call("forecast_discussion", {"place": None, "section": "aviation"})
     assert err and "home airports" in out
+
+
+async def test_mountain_passes_returns_the_board_and_how_it_is_worked_out():
+    out, err = await call("mountain_passes", {"passes": None})
+    assert not err
+    assert len(out["passes"]) == 16
+    rollins = next(p for p in out["passes"] if p["pass"] == "Rollins Pass")
+    assert rollins["status"] in ("Looks OK", "Caution", "No-go", "No data") and rollins["reasons"]
+    method = out["method"]
+    assert any("25 kt or more is No-go" in r for r in method["pass_status_rules"])
+    assert any("G-AIRMET Sierra" in r for r in method["pass_status_rules"])
+    assert any("aviationweather.gov" in s for s in method["data_sources"])
+
+
+async def test_mountain_passes_by_name():
+    out, err = await call("mountain_passes", {"passes": ["rollins", "Rabbit Ears"]})
+    assert not err and [p["pass"] for p in out["passes"]] == ["Rollins Pass", "Rabbit Ears Pass"]
+    out, err = await call("mountain_passes", {"passes": ["Nowhere"]})
+    assert err and "Rollins Pass" in out
+
+
+def test_the_method_follows_the_thresholds(monkeypatch):
+    from bot import mountain, regions
+
+    monkeypatch.setattr(mountain, "RIDGE_NO_GO_KT", 30)
+    rules = " ".join(mountain.method(regions.get("co_front_range"))["pass_status_rules"])
+    assert "30 kt or more is No-go" in rules and "15-29 kt is Caution" in rules

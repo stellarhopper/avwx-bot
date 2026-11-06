@@ -40,6 +40,10 @@ WAVE_ELEVATED_KT = 25
 WAVE_HIGH_KT = 40
 OBSCURATION_RADIUS_NM = 5
 HAZARD_RADIUS_NM = 30
+# Station reports older than this don't count. AWC hands back a station's
+# last report however old it is, and a station that died weeks ago (KC07 on
+# Rabbit Ears, in Nov 2026) would otherwise rate its pass on that.
+MAX_OBS_AGE_MIN = 180
 
 STATUS_ORDER = ("go", "caution", "no-go")
 STATUS_LABELS = {"go": "Looks OK", "caution": "Caution", "no-go": "No-go", "unknown": "No data"}
@@ -94,6 +98,48 @@ class MountainBoard:
     density: list[DensityAltitude]
     weathercams_url: str | None
     problems: list[str] = field(default_factory=list)
+
+
+def method(region: dict) -> dict:
+    """How the board is worked out, in words, from the same constants and
+    region data the code uses, so an explanation can't drift from what it
+    does. For the chat, when a member asks what "No-go" means."""
+    ridge = region.get("ridge") or {}
+    start, end = ridge.get("cross_from_deg", 240), ridge.get("cross_to_deg", 320)
+    levels = " and ".join(f"{a:,} ft" for a in ridge.get("levels_ft", [12000, 18000]))
+    labels = STATUS_LABELS
+    return {
+        "nature": "Rules of thumb from mountain-flying courses, for awareness. Each pass gets the worst "
+                  "status any rule gives it; with no data at all it shows \"" + labels["unknown"] + "\".",
+        "pass_status_rules": [
+            f"{labels['no-go']}: the weather station on the pass reports IFR or LIFR, or a thunderstorm.",
+            f"{labels['caution']}: the station on the pass reports MVFR, snow or freezing precipitation, or "
+            f"gusts of {RIDGE_NO_GO_KT} kt or more.",
+            f"{labels['caution']}: an airport on either approach side (the way you'd turn back) reports IFR or LIFR.",
+            f"{labels['no-go']}: a G-AIRMET Sierra for mountain obscuration, or for IFR, within "
+            f"{OBSCURATION_RADIUS_NM} nm of the pass, in force now or within 3 hours.",
+            f"Wind at the first winds-aloft forecast level at or above the pass, from the forecast site the "
+            f"region file assigns it: {RIDGE_NO_GO_KT} kt or more is {labels['no-go']}, "
+            f"{RIDGE_CAUTION_KT}-{RIDGE_NO_GO_KT - 1} kt is {labels['caution']}.",
+            f"{labels['go']}: none of the above, with at least some data for the pass.",
+        ],
+        "wave_risk_rules": [
+            f"Wind from {start:03d}-{end:03d}° (across the ridge) at {levels} at the region's winds-aloft "
+            f"sites: {WAVE_ELEVATED_KT} kt or more is elevated, {WAVE_HIGH_KT} kt or more is high.",
+            "A G-AIRMET Tango for turbulence due to mountain wave raises it to at least elevated.",
+            f"PIREPs within {region.get('pirep_radius_nm', 120)} nm of {region.get('pirep_center', 'KDEN')} in "
+            "the last 3 hours: severe turbulence makes it high; wave reports or moderate turbulence, elevated.",
+            "The NWS forecast discussion mentioning mountain wave, rotor or lenticulars raises it to elevated.",
+        ],
+        "data_sources": [
+            "METARs from the stations on and either side of each pass (aviationweather.gov)",
+            "Winds and temperatures aloft, the FB forecast (aviationweather.gov)",
+            "G-AIRMETs (aviationweather.gov)",
+            "PIREPs (aviationweather.gov)",
+            "The NWS Area Forecast Discussion (weather.gov)",
+        ],
+        "region": region.get("name", region.get("id")),
+    }
 
 
 def in_sector(direction: int | None, start: int, end: int) -> bool:
@@ -246,6 +292,8 @@ async def build(awc: Awc, nws: Nws, region: dict, cfg: dict, now: datetime | Non
         _guard(problems, "PIREPs", awc.pireps(region.get("pirep_center", "KDEN"), region.get("pirep_radius_nm", 120), 3), []),
         _guard(problems, "Forecast discussion", nws.discussion(offices[0]), None) if offices else _none(),
     )
+
+    metars = {k: m for k, m in metars.items() if (m.age_minutes(now) or 0) <= MAX_OBS_AGE_MIN}
 
     ridge_winds = {}
     if forecast is not None:

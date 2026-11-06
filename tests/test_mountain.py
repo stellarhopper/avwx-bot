@@ -163,3 +163,44 @@ def test_mountain_data_failures_reach_the_brief_warnings():
         "Winds aloft: aviationweather.gov is having trouble (HTTP 502).",
         "Mountain data — METARs: aviationweather.gov is having trouble (HTTP 502).",
     ]
+
+
+async def test_an_empty_winds_forecast_is_a_reported_failure():
+    import pytest as _pytest
+
+    from bot import briefing
+    from bot.sources.http import SourceError
+
+    c = clients(windtemp=(204, ""))
+    with _pytest.raises(SourceError, match="winds-aloft"):
+        await c.awc.winds_aloft()
+    data = await briefing.gather(c.awc, c.nws, title="t", airports=["KBJC"], config=guildcfg.effective(None),
+                                 include={"winds_aloft": True}, now=NOW)
+    assert data.winds is None and any(p.startswith("Winds aloft:") for p in data.problems)
+    board = await mountain.build(c.awc, c.nws, REGION, guildcfg.effective(None), NOW)
+    # No ridge winds, and the board says why. (Wave risk can still be raised
+    # by the Tango G-AIRMET and PIREPs in the fixtures.)
+    assert board.ridge_winds == {} and all(p.ridge_wind is None for p in board.passes)
+    assert any(p.startswith("Winds aloft:") for p in board.problems)
+
+
+async def test_a_long_dead_station_does_not_rate_its_pass():
+    import json
+
+    from fakeapi import all_metars
+
+    def metars(params):
+        ids = set(params.get("ids", "").split(","))
+        out = []
+        for d in all_metars():
+            if d["icaoId"] in ids:
+                if d["icaoId"] == "KC99":  # Rollins' station, last heard from weeks ago
+                    d = {**d, "obsTime": d["obsTime"] - 20 * 86400}
+                out.append(d)
+        return 200, json.dumps(out)
+
+    c = clients(metar=metars)
+    board = await mountain.build(c.awc, c.nws, REGION, guildcfg.effective(None), NOW)
+    rollins = next(p for p in board.passes if p.id == "rollins")
+    assert rollins.on_pass is None
+    assert not any("KC99" in why for _, why in rollins.reasons)

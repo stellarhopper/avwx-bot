@@ -224,6 +224,16 @@ DEFINITIONS = [
         ["section"],
     ),
     _tool(
+        "mountain_passes",
+        "The mountain pass board as it stands now: each pass's status (Looks OK, Caution, No-go, No data) "
+        "with the reasons, the observation on and either side of it, the wind at pass level, and the "
+        "mountain wave risk. Also returns `method`: the rules behind the statuses and the data they use. "
+        "Use it for questions about passes, wave, or what the statuses mean. `passes` filters by name; "
+        "null means all of them.",
+        {"passes": {"type": "array", "items": {"type": "string"}, "description": "Pass names, e.g. Rollins."}},
+        [],
+    ),
+    _tool(
         "attach_card",
         "Attach one of the bot's weather images to your reply: a METAR or TAF card for up to four airports, "
         "the winds aloft near an airport, or the mountain pass board. Use it when a picture helps; don't "
@@ -554,6 +564,41 @@ async def read_manual_pages(ctx: ToolContext, args: dict) -> list[dict]:
         raise ToolError(str(exc)) from None
 
 
+async def mountain_passes(ctx: ToolContext, args: dict) -> dict:
+    wanted = [w.lower() for w in _items(args, "passes", most=20, required=False)]
+    region = regions.get(ctx.config.get("mountain", {}).get("region")) or next(iter(regions.all_regions().values()), None)
+    if region is None:
+        raise ToolError("No mountain region is set up.")
+    board = await mountain.build(ctx.awc, ctx.nws, region, ctx.config, ctx.now())
+    passes = board.passes
+    if wanted:
+        passes = [p for p in passes if any(w in p.name.lower() or w in p.id for w in wanted)]
+        if not passes:
+            raise ToolError(f"No pass by that name. Passes: {', '.join(p.name for p in board.passes)}.")
+    attention = [f"{p.name}: {mountain.STATUS_LABELS[p.status]} ({'; '.join(p.why())})"
+                 for p in passes if p.status in ("caution", "no-go")]
+    if board.wave.level in ("elevated", "high"):
+        attention.append(f"Mountain wave risk {board.wave.level}: {'; '.join(board.wave.reasons)}")
+    attention += [f"Missing data: {problem}" for problem in board.problems]
+    return {
+        "as_of": summary.when(board.generated, ctx.tz),
+        "attention": attention or ["Nothing outside normal parameters found."],
+        "passes": [
+            {
+                "pass": p.name, "elevation_ft": p.elevation_ft, "status": mountain.STATUS_LABELS[p.status],
+                "reasons": [why for _, why in p.reasons],
+                "on_pass": p.on_pass.raw if p.on_pass else None,
+                "sides": {side: m.raw for side, m in p.sides.items() if m is not None},
+                "wind_at_pass_level": (fmt.wind(p.ridge_wind.direction, p.ridge_wind.speed_kt)
+                                       + f" at {p.ridge_wind.altitude_ft:,} ft") if p.ridge_wind else None,
+            }
+            for p in passes
+        ],
+        "mountain_wave": {"level": board.wave.level, "why": board.wave.reasons},
+        "method": mountain.method(region),
+    }
+
+
 DISCUSSION_CLIP = 6000  # characters per section; a long one is still mostly there
 
 
@@ -662,6 +707,7 @@ HANDLERS = {
     "search_manual": search_manual,
     "read_manual_pages": read_manual_pages,
     "forecast_discussion": forecast_discussion,
+    "mountain_passes": mountain_passes,
     "attach_card": attach_card,
 }
 

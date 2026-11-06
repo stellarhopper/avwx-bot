@@ -22,7 +22,7 @@ from ..wx import flightcat
 from ..wx.density_alt import FT_PER_M, density_altitude, hpa_to_inhg
 from ..wx.runways import RunwayEnd, magnetic_variation, runway_ends
 from . import windsaloft
-from .http import Http
+from .http import Http, SourceError
 
 BASE = "https://aviationweather.gov/api/data"
 
@@ -561,4 +561,10 @@ class Awc:
         _, high = await self.http.get_text(
             f"{BASE}/windtemp", {"region": "all", "level": "high", "fcst": fcst}, ttl=TTL_WINDS
         )
-        return windsaloft.parse(low + "\n" + high)
+        forecast = windsaloft.parse(low + "\n" + high)
+        if not forecast.sites:
+            # An empty reply comes back as success (HTTP 204), and was taken
+            # for "no winds" for days in Nov 2026 while no US forecast was
+            # published. It's a failure, and has to be reported as one.
+            raise SourceError("No current winds-aloft forecast is being published.")
+        return forecast
