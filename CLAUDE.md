@@ -17,7 +17,9 @@ the layout.
   `site/codec.js`. Keep both in step; the Node-driven tests catch drift.
 - Discord IDs in configs are strings, because they don't fit in a JavaScript number.
 - All HTTP goes through `bot/sources/http.py:Http`, which caches by URL with a
-  TTL per product. Never cache anything per guild there.
+  TTL per product and retries passing failures (timeouts, 5xx, 429) twice after
+  short waits. Never cache anything per guild there, and don't add retries
+  around it.
 - Rendering is CPU-bound. Run renderers through `asyncio.to_thread` from
   command handlers.
 - Detect channel kinds by `channel.type`, not `isinstance`. That way

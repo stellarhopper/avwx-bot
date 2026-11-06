@@ -75,15 +75,20 @@ def test_afd_aviation_section():
 
 
 class FakeHttp(Http):
+    """A response per URL; a list is answered in order, one item per attempt."""
+
     def __init__(self, responses):
         super().__init__("test")
         self.responses = responses
         self.calls = 0
+        self.retry_delays = (0.0, 0.0)
 
     async def _fetch(self, url, params, accept):
         self.calls += 1
         await asyncio.sleep(0.01)
         result = self.responses[url]
+        if isinstance(result, list):
+            result = result.pop(0)
         if isinstance(result, Exception):
             raise result
         return result
@@ -104,6 +109,42 @@ async def test_http_errors_are_source_errors_and_not_cached():
         await http.get_json("https://x/a", ttl=60)
     http.responses["https://x/a"] = (200, "[]")
     assert await http.get_json("https://x/a", ttl=60) == []
+
+
+async def test_http_retries_a_passing_failure():
+    import aiohttp
+
+    http = FakeHttp({"https://x/a": [(502, "bad gateway"), aiohttp.ClientConnectionError(), (200, '{"v": 2}')]})
+    assert await http.get_json("https://x/a", ttl=60) == {"v": 2}
+    assert http.calls == 3
+
+
+async def test_http_gives_up_after_three_attempts():
+    http = FakeHttp({"https://x/a": (502, "bad gateway")})
+    with pytest.raises(SourceError, match="HTTP 502"):
+        await http.get_json("https://x/a", ttl=60)
+    assert http.calls == 3
+
+
+async def test_http_does_not_retry_a_request_the_server_rejects():
+    http = FakeHttp({"https://x/a": (404, "no such product")})
+    with pytest.raises(SourceError, match="rejected the request"):
+        await http.get_json("https://x/a", ttl=60)
+    assert http.calls == 1
+
+
+async def test_concurrent_requests_share_one_set_of_retries():
+    http = FakeHttp({"https://x/a": [(503, ""), (200, "[1]")]})
+    results = await asyncio.gather(*(http.get_json("https://x/a", ttl=60) for _ in range(4)))
+    assert results == [[1]] * 4 and http.calls == 2
+
+
+async def test_http_waits_between_attempts():
+    http = FakeHttp({"https://x/a": [(502, ""), (502, ""), (200, "[]")]})
+    http.retry_delays = (0.05, 0.1)
+    start = asyncio.get_running_loop().time()
+    await http.get_json("https://x/a", ttl=60)
+    assert asyncio.get_running_loop().time() - start >= 0.15
 
 
 async def test_http_204_is_none():

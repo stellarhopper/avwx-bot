@@ -20,6 +20,11 @@ import aiohttp
 log = logging.getLogger(__name__)
 
 TIMEOUT = aiohttp.ClientTimeout(total=20)
+# Waits before the second and third attempts. aviationweather.gov in
+# particular returns the odd 502 or times out for a moment; a brief at 06:00
+# that loses its mountain METARs to one is worse than one that waits four
+# seconds for them.
+RETRY_DELAYS = (1.0, 3.0)
 
 
 class SourceError(Exception):
@@ -38,6 +43,7 @@ class Http:
         self._session: aiohttp.ClientSession | None = None
         self._cache: dict[str, tuple[float, int, str]] = {}
         self._inflight: dict[str, asyncio.Future] = {}
+        self.retry_delays = RETRY_DELAYS
 
     async def _fetch(self, url: str, params: dict | None, accept: str) -> tuple[int, str]:
         """The one place that touches the network. Tests replace this."""
@@ -63,17 +69,7 @@ class Http:
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         self._inflight[key] = future
         try:
-            try:
-                status, body = await self._fetch(url, params, accept)
-            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
-                log.warning("GET %s failed: %r", key, exc)
-                raise SourceError(f"Couldn't reach {_host(url)} just now.") from exc
-            if status >= 500 or status == 429:
-                log.warning("GET %s → %s", key, status)
-                raise SourceError(f"{_host(url)} is having trouble (HTTP {status}).")
-            if status >= 400:
-                log.warning("GET %s → %s: %s", key, status, body[:200])
-                raise SourceError(f"{_host(url)} rejected the request (HTTP {status}).")
+            status, body = await self._fetch_with_retries(key, url, params, accept)
             self._cache[key] = (time.monotonic() + ttl, status, body)
             future.set_result((status, body))
             return status, body
@@ -86,6 +82,34 @@ class Http:
             raise
         finally:
             self._inflight.pop(key, None)
+
+    async def _fetch_with_retries(self, key: str, url: str, params: dict | None, accept: str) -> tuple[int, str]:
+        """Fetch, trying again after a short wait when the failure might pass:
+        no connection, a timeout, a 5xx or a 429. Any other 4xx means the
+        request itself is wrong, so it fails at once. Raises SourceError."""
+        attempts = 1 + len(self.retry_delays)
+        failure: SourceError | None = None
+        for attempt, delay in enumerate((0.0, *self.retry_delays), 1):
+            if delay:
+                await asyncio.sleep(delay)
+            try:
+                status, body = await self._fetch(url, params, accept)
+            except (aiohttp.ClientError, asyncio.TimeoutError) as exc:
+                log.warning("GET %s failed (attempt %d of %d): %r", key, attempt, attempts, exc)
+                failure = SourceError(f"Couldn't reach {_host(url)} just now.")
+                failure.__cause__ = exc
+                continue
+            if status >= 500 or status == 429:
+                log.warning("GET %s → %s (attempt %d of %d)", key, status, attempt, attempts)
+                failure = SourceError(f"{_host(url)} is having trouble (HTTP {status}).")
+                continue
+            if status >= 400:
+                log.warning("GET %s → %s: %s", key, status, body[:200])
+                raise SourceError(f"{_host(url)} rejected the request (HTTP {status}).")
+            if attempt > 1:
+                log.info("GET %s succeeded on attempt %d", key, attempt)
+            return status, body
+        raise failure
 
     async def get_json(
         self, url: str, params: dict | None = None, *, ttl: float, accept: str = "application/json"

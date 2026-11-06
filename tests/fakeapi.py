@@ -18,6 +18,7 @@ from conftest import fixture_json, fixture_text
 class FixtureHttp(Http):
     def __init__(self, **overrides) -> None:
         super().__init__("tests")
+        self.retry_delays = (0.0, 0.0)  # same number of attempts, no waiting
         self.overrides = overrides  # product name → (status, body) or callable(params)
         self.requests: list[tuple[str, dict | None]] = []
 
