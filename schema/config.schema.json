@@ -61,6 +61,7 @@
         "brief": {"type": "boolean", "default": true},
         "winds": {"type": "boolean", "default": true},
         "pirep": {"type": "boolean", "default": true},
+        "discussion": {"type": "boolean", "default": true},
         "mountain": {"type": "boolean", "default": true},
         "alerts": {"type": "boolean", "default": true}
       }

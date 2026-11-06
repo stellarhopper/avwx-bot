@@ -30,7 +30,7 @@ GENERIC_FAILURE = "Something went wrong on my end. Try again in a minute, and te
 
 # Commands an admin can switch off per server, by top-level command name. The
 # keys match the schema's `commands` section.
-SWITCHABLE = {"metar", "taf", "brief", "winds", "pirep", "mountain", "alerts"}
+SWITCHABLE = {"metar", "taf", "brief", "winds", "pirep", "discussion", "mountain", "alerts"}
 
 
 def unwrap(error: BaseException) -> BaseException:

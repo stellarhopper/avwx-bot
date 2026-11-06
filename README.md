@@ -25,6 +25,7 @@ Hazards, alerts and the mountain features cover the US.
 | `/brief [airports]` | Dashboard: conditions, TAF strips, AIRMETs and SIGMETs, NWS warnings, winds aloft, PIREPs, forecast discussion |
 | `/winds [where]` | Winds and temperatures aloft for an airport's nearest forecast site, or a site such as `DEN` |
 | `/pirep [airport] [radius] [hours]` | Recent pilot reports, with moderate-or-worse turbulence, icing and mountain wave listed first |
+| `/discussion [where] [section]` | The latest NWS forecast discussion from the office covering a place: the aviation section, or all of it |
 | `/alerts` | Severe weather affecting the server's area right now |
 | `/mountain` | Mountain flying: pass status, mountain-wave risk, ridge-level winds, density altitude. Off until an admin switches it on |
 | `/avwx config edit` | Private link to the configurator, filled in with this server's settings |

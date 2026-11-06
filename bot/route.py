@@ -326,6 +326,19 @@ async def resolve(awc: Awc, items: list[str]) -> list[Resolved]:
     return _decide(texts, found, problems)
 
 
+async def resolve_near(awc: Awc, text: str, near: str | None) -> Resolved:
+    """One place, resolved as if it followed `near` (a server's home airport)
+    in a route. A name on its own has no neighbours to rank by distance, so
+    "Steamboat" would be a tie between Steamboat Springs, CO and Steamboat
+    Bay, AK; asked from a Front Range server it means the Colorado one."""
+    if near and near.strip().upper() != text.strip().upper():
+        anchor, place = await resolve(awc, [near, text])
+        if anchor.status == "resolved":
+            return place
+    (place,) = await resolve(awc, [text])
+    return place
+
+
 def _penalty(candidate: Candidate, refs: list[Point]) -> float:
     if not refs:
         return 0.0

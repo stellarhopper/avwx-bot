@@ -562,12 +562,13 @@ async def forecast_discussion(ctx: ToolContext, args: dict) -> dict:
     if section not in ("aviation", "all"):
         raise ToolError("`section` must be aviation or all.")
     place = _text(args, "place", required=False)
+    homes = ctx.config.get("home_airports") or []
     if place is None:
-        homes = ctx.config.get("home_airports") or []
         if not homes:
             raise ToolError("This server has no home airports set, so name a place.")
         place = homes[0]
-    resolved = await _resolve(ctx, [place])
+    # A lone name is ranked by distance from the server's home airport.
+    resolved = [await route_mod.resolve_near(ctx.awc, place, homes[0] if homes else None)]
     unclear = _unclear(resolved)
     if unclear:
         return unclear

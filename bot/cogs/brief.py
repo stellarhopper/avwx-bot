@@ -10,7 +10,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands, tasks
 
-from .. import briefing, clock, context, guildcfg, hazards, mountain, posting, regions
+from .. import briefing, clock, context, guildcfg, hazards, mountain, posting, regions, route
 from ..render import brief as brief_render
 from ..render import winds as winds_render
 from ..sources import nws
@@ -239,18 +239,90 @@ class Briefs(commands.Cog):
         reps = await self.bot.awc.pireps(ids[0], radius, hours)
         await interaction.followup.send(pirep_message(ids[0], radius, hours, reps, ctx.tz))
 
+    @app_commands.command(name="discussion", description="The latest NWS forecast discussion")
+    @app_commands.describe(
+        where="An airport, town or pass. Leave empty for this server's or thread's airports.",
+        section="Just the aviation section (default), or the whole discussion",
+    )
+    @app_commands.choices(section=[
+        app_commands.Choice(name="Aviation", value="aviation"),
+        app_commands.Choice(name="All sections", value="all"),
+    ])
+    async def discussion(
+        self, interaction: discord.Interaction, where: str | None = None,
+        section: app_commands.Choice[str] | None = None,
+    ) -> None:
+        ctx = context.guild_context(self.bot.store, interaction.guild_id)
+        typed = (where or "").strip()
+        if not typed:
+            try:
+                typed = context.resolve_stations(
+                    self.bot.store, interaction, None, limit=1, fallback=ctx.home_airports
+                )[0]
+            except context.StationInputError as exc:
+                await interaction.response.send_message(str(exc), ephemeral=True)
+                return
+        await interaction.response.defer(thinking=True)
+        # Discussions come from the NWS office covering a place, so any place
+        # the route resolver understands will do: "Granby" finds GJT's.
+        home = ctx.home_airports[0] if ctx.home_airports else None
+        resolved = await route.resolve_near(self.bot.awc, typed, home)
+        if resolved.status != "resolved":
+            options = ", ".join(f"{c.point.ident} ({c.point.note or c.point.name})" for c in resolved.candidates)
+            text = f"I'm not sure where `{typed[:40]}` is." + (f" Did you mean {options}?" if options else "")
+            await interaction.followup.send(text, ephemeral=True)
+            return
+        point = resolved.point
+        office = await self.bot.nws.office_for(point.lat, point.lon)
+        if not office:
+            await interaction.followup.send(
+                f"No NWS forecast office covers {point.label()}; forecast discussions are US only.", ephemeral=True
+            )
+            return
+        found = await self.bot.nws.discussion(office)
+        if found is None:
+            await interaction.followup.send(f"NWS {office} has no current forecast discussion.", ephemeral=True)
+            return
+        parts = nws.sections(found.text)
+        everything = section is not None and section.value == "all"
+        if not everything:
+            parts = [(t, b) for t, b in parts if t.upper().startswith("AVIATION")]
+            if not parts:
+                await interaction.followup.send(
+                    f"NWS {office}'s latest discussion has no aviation section. Try `section: All sections`."
+                )
+                return
+        name = nws.office_name(found.text) or office
+        messages = discussion_messages(
+            "all sections" if everything else "aviation", name, found.issued, ctx.tz, parts
+        )
+        for text in messages:
+            await interaction.followup.send(text)
+
+
+def discussion_messages(heading: str, office: str, issued, tz, parts: list[tuple[str, str]]) -> list[str]:
+    """Forecast discussion text as Discord messages: one heading, then the
+    text reflowed so it wraps to the screen rather than at NWS's 66 columns,
+    and split across messages rather than cut off. With more than one part,
+    each gets its section title."""
+    if not parts:
+        return []
+    when = f", issued {fmt.local(issued, tz, '%a %H:%M')}" if issued else ""
+    head = f"**Forecast discussion — {heading}** (NWS {office}{when})"
+    if len(parts) == 1:
+        text = nws.reflow(parts[0][1])
+    else:
+        text = "\n\n".join(f"**{title}**\n{nws.reflow(body)}" for title, body in parts)
+    chunks = split_message(text, limit=1900 - len(head))
+    return [(head + "\n" if i == 0 else "") + ">>> " + chunk for i, chunk in enumerate(chunks)]
+
 
 def afd_messages(data: briefing.BriefData) -> list[str]:
-    """The forecast discussion's aviation section as Discord messages: one
-    heading, then the text reflowed so it wraps to the screen rather than at
-    NWS's 66 columns, split across messages rather than cut off. The morning
-    brief and /brief both post it."""
+    """The brief's discussion: the aviation section. The morning brief and
+    /brief both post it."""
     if not data.afd:
         return []
-    issued = f", issued {fmt.local(data.afd.issued, data.tz, '%a %H:%M')}" if data.afd.issued else ""
-    head = f"**Forecast discussion — aviation** (NWS {data.afd.office}{issued})"
-    chunks = split_message(nws.reflow(data.afd.aviation), limit=1900 - len(head))
-    return [(head + "\n" if i == 0 else "") + ">>> " + chunk for i, chunk in enumerate(chunks)]
+    return discussion_messages("aviation", data.afd.office, data.afd.issued, data.tz, [("Aviation", data.afd.aviation)])
 
 
 def pirep_message(center: str, radius: int, hours: int, reps, tz) -> str:

@@ -63,3 +63,13 @@ async def test_as_dict_carries_candidates_only_when_ambiguous():
     res = await resolve("KGJT", "Delta")
     assert "candidates" not in res[0].as_dict()
     assert res[1].as_dict()["candidates"][0]["kind"] == "airport"
+
+
+async def test_a_lone_name_is_ranked_from_the_home_airport():
+    c = clients()
+    alone = await route.resolve_near(c.awc, "Sterling", None)
+    near = await route.resolve_near(c.awc, "Sterling", "KDEN")
+    assert alone.status == "ambiguous"
+    assert near.status == "resolved" and near.point.ident == "KSTK"
+    same = await route.resolve_near(c.awc, "KDEN", "KDEN")
+    assert same.point.ident == "KDEN"

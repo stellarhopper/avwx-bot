@@ -229,3 +229,48 @@ async def test_a_long_discussion_is_split_not_cut_off():
     assert len(parts) > 1 and all(len(t) <= 2000 for t in parts)
     assert parts[0].startswith("**Forecast discussion — aviation** (NWS BOU, issued Sat 00:32)")
     assert all("Paragraph %d:" % n in "".join(parts) for n in range(8))
+
+
+async def test_discussion_command_defaults_to_the_home_airport_and_aviation():
+    bot = make_bot()
+    guild = FakeGuild([])
+    bot.store.set_config(guild.id, {"schema_version": 1, "home_airports": ["KBJC"]}, actor_id=None)
+    cog = brief_cog.Briefs(bot)
+    i = FakeInteraction(guild)
+    await cog.discussion.callback(cog, i)
+    texts = [content for kind, content, _ in i.record if kind == "followup"]
+    assert texts[0].startswith("**Forecast discussion — aviation** (NWS Denver/Boulder CO, issued")
+    body = texts[0].split(">>> ", 1)[1]
+    assert "\n" not in body and "pushing across the TAF sites" in body
+
+
+async def test_discussion_command_all_sections_for_a_named_place():
+    import types as t
+
+    bot = make_bot()
+    cog = brief_cog.Briefs(bot)
+    i = FakeInteraction(FakeGuild([]))
+    await cog.discussion.callback(cog, i, "Granby", t.SimpleNamespace(value="all"))
+    text = "".join(content for kind, content, _ in i.record if kind == "followup")
+    assert "**Forecast discussion — all sections**" in text
+    assert "**KEY MESSAGES**" in text and "**AVIATION" in text
+    assert all(len(content) <= 2000 for kind, content, _ in i.record if kind == "followup")
+
+
+async def test_discussion_command_asks_about_places_it_cannot_place():
+    bot = make_bot()
+    cog = brief_cog.Briefs(bot)
+    i = FakeInteraction(FakeGuild([]))
+    await cog.discussion.callback(cog, i, "xyzzy plugh")
+    assert "not sure where" in i.reply and i.last.get("ephemeral")
+
+
+async def test_discussion_command_can_be_switched_off():
+    from bot.tree import command_disabled
+
+    assert command_disabled({"schema_version": 1, "commands": {"discussion": False}}, "discussion")
+    assert not command_disabled({"schema_version": 1}, "discussion")
+
+
+def test_discussion_messages_without_an_aviation_part_say_nothing():
+    assert brief_cog.discussion_messages("aviation", "BOU", None, None, []) == []

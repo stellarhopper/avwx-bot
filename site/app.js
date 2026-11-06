@@ -6,7 +6,7 @@ const SCHEMA_URL = "config.schema.json";
 const REGIONS_URL = "regions.json";
 
 const WEEKDAYS = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-const COMMANDS = ["metar", "taf", "brief", "winds", "pirep", "mountain", "alerts"];
+const COMMANDS = ["metar", "taf", "brief", "winds", "pirep", "discussion", "mountain", "alerts"];
 const BRIEF_PARTS = {
   tafs: "TAFs",
   winds_aloft: "Winds aloft",
