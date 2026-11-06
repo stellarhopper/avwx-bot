@@ -119,13 +119,13 @@ class Briefs(commands.Cog):
         return posted
 
     async def thread_details(self, guild: discord.Guild, thread_id: int, data: briefing.BriefData) -> None:
-        """In a forum post there's room for the forecast discussion's aviation section."""
-        for text in afd_messages(data):
-            await posting.reply_in_thread(guild, thread_id, text)
+        """A hint in the forum post. The forecast discussion isn't repeated as
+        text: the image has it, and /discussion gives all of it."""
         await posting.reply_in_thread(
             guild,
             thread_id,
-            "-# Run `/metar`, `/taf`, `/pirep` or `/winds` here with no airport to get this brief's airports.",
+            "-# Run `/metar`, `/taf`, `/pirep` or `/winds` here with no airport to get this brief's airports, "
+            "or `/discussion` for the full forecast discussion.",
         )
 
     # ------------------------------------------------------------ scheduler
@@ -178,13 +178,11 @@ class Briefs(commands.Cog):
             return
         await interaction.response.defer(thinking=True)
         data, image = await self.build(ctx.config, ids, title="Weather brief")
-        # The same as the morning brief: the image, the summary line, then the
-        # forecast discussion as text. No raw reports; /metar and /taf give those.
+        # The same as the morning brief: the image and the summary line. No
+        # raw reports or discussion text; /metar, /taf and /discussion give those.
         await interaction.followup.send(
             brief_render.summary_line(data)[:2000], file=png_file(image, "brief.png", brief_render.alt_text(data))
         )
-        for text in afd_messages(data):
-            await interaction.followup.send(text)
 
     @app_commands.command(name="winds", description="Winds and temperatures aloft")
     @app_commands.describe(where="An airport (nearest forecast site is used) or a winds-aloft site such as DEN")
@@ -318,14 +316,6 @@ def discussion_messages(heading: str, office: str, issued, tz, parts: list[tuple
         text = "\n\n".join(f"**{title}**\n{nws.reflow(body)}" for title, body in parts)
     chunks = split_message(text, limit=1900 - len(head))
     return [(head + "\n" if i == 0 else "") + ">>> " + chunk for i, chunk in enumerate(chunks)]
-
-
-def afd_messages(data: briefing.BriefData) -> list[str]:
-    """The brief's discussion: the aviation section. The morning brief and
-    /brief both post it."""
-    if not data.afd:
-        return []
-    return discussion_messages("aviation", data.afd.office, data.afd.issued, data.tz, [("Aviation", data.afd.aviation)])
 
 
 def pirep_message(center: str, radius: int, hours: int, reps, tz) -> str:

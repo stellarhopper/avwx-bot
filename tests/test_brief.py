@@ -12,7 +12,7 @@ from bot.sources.awc import Pirep
 from bot.store import Store
 from conftest import fixture_json
 from fakeapi import clients
-from fakes import FakeChannel, FakeGuild, FakeInteraction, FakeThread
+from fakes import FakeChannel, FakeGuild, FakeInteraction
 
 NOW = datetime(2026, 10, 24, 6, 40, tzinfo=timezone.utc)
 
@@ -131,11 +131,10 @@ async def test_brief_to_forum_makes_a_tagged_post_with_details_in_the_thread():
     assert [t.name for t in thread.applied_tags] == ["Brief"]
     texts = [m.content for m in thread.sent]
     assert texts[0].startswith("**Morning brief") and "```" not in texts[0]
-    assert not any("METAR" in t or "```" in t for t in texts)
-    [afd] = [t for t in texts if t.startswith("**Forecast discussion")]
-    # Reflowed: one paragraph is one line, not NWS's 66-column wrapping.
-    body = afd.split(">>> ", 1)[1]
-    assert "\n" not in body and "pushing across the TAF sites at this time" in body
+    # No raw reports and no discussion text: the image has the discussion,
+    # and /discussion gives all of it.
+    assert not any("METAR" in t or "```" in t or "Forecast discussion" in t for t in texts)
+    assert "/discussion" in texts[-1]
     # A bare /metar in this thread now means the brief's airports.
     assert bot.store.get_post_context(guild.id, thread.id).airports == ["KBJC", "KAPA"]
     # day=None: a manual post doesn't use up the scheduled one.
@@ -173,13 +172,11 @@ async def test_brief_command_uses_home_airports(monkeypatch):
     i = FakeInteraction(guild)
     await cog.brief.callback(cog, i)
     (first, first_kw), *rest = [(content, kw) for kind, content, kw in i.record if kind == "followup"]
-    # Like the morning brief: image and summary, no raw reports...
+    # Like the morning brief: image and summary, no raw reports and no
+    # discussion text.
     assert "KDEN VFR" in first and "```" not in first and "METAR" not in first
     assert first_kw["file"].filename == "brief.png"
-    # ...then the forecast discussion, reflowed.
-    assert rest and rest[0][0].startswith("**Forecast discussion — aviation** (NWS BOU")
-    body = rest[0][0].split(">>> ", 1)[1]
-    assert "\n" not in body and "pushing across the TAF sites" in body
+    assert rest == []
 
 
 async def test_winds_command_by_airport_and_by_site():
@@ -207,28 +204,21 @@ def test_raw_block_never_breaks_its_fences(limit):
     assert len(block) <= limit and block.startswith("```\n") and block.endswith("\n```")
 
 
-async def test_a_long_discussion_is_split_not_cut_off():
+def test_a_long_discussion_is_split_not_cut_off():
     from datetime import datetime, timezone
     from zoneinfo import ZoneInfo
 
-    from bot.briefing import Afd
-
-    bot = make_bot()
-    forum = FakeChannel("briefs", kind=discord.ChannelType.forum)
-    thread = FakeThread(forum, "Morning brief")
-    forum.threads.append(thread)
-    guild = FakeGuild([forum])
     paragraphs = [f"Paragraph {n}: " + "gusty northwest winds through the afternoon " * 12 for n in range(8)]
     text = "\n\n".join("\n".join(p[i:i + 66] for i in range(0, len(p), 66)) for p in paragraphs)
-    data = types.SimpleNamespace(
-        afd=Afd("BOU", datetime(2026, 10, 24, 6, 32, tzinfo=timezone.utc), text),
-        tz=ZoneInfo("America/Denver"),
+    parts = brief_cog.discussion_messages(
+        "aviation", "BOU", datetime(2026, 10, 24, 6, 32, tzinfo=timezone.utc), ZoneInfo("America/Denver"),
+        [("Aviation", text)],
     )
-    await brief_cog.Briefs(bot).thread_details(guild, thread.id, data)
-    parts = [m.content for m in thread.sent if m.content.startswith(("**Forecast", ">>>"))]
     assert len(parts) > 1 and all(len(t) <= 2000 for t in parts)
     assert parts[0].startswith("**Forecast discussion — aviation** (NWS BOU, issued Sat 00:32)")
     assert all("Paragraph %d:" % n in "".join(parts) for n in range(8))
+    # Reflowed: one paragraph is one line, not NWS's 66-column wrapping.
+    assert "gusty northwest winds through the afternoon gusty" in "".join(parts)
 
 
 async def test_discussion_command_defaults_to_the_home_airport_and_aviation():

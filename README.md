@@ -107,10 +107,9 @@ ordinary messages, or to a **forum**, where each one becomes its own post.
 choose. It's skipped if the bot was down for more than an hour past that time,
 and it never posts twice in one day. Each section is fetched separately, so a
 source that's down costs only its own section, and the image says which
-section is missing. The aviation part of the NWS forecast discussion follows
-the image as text (inside the post, in a forum), reflowed to read well on a
-phone. `/brief` posts the same way on demand. Raw reports aren't included;
-`/metar` and `/taf` give those.
+section is missing. The image includes the aviation part of the NWS forecast
+discussion. `/brief` posts the same way on demand. Neither posts raw reports or
+the discussion as text; `/metar`, `/taf` and `/discussion` give those.
 
 **Severe-weather alerts.** The bot checks every 3 minutes and posts when any of
 these happens within the configured radius:
