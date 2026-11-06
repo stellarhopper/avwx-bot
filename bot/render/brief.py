@@ -16,6 +16,7 @@ PAD = 16
 GAP = 12
 MAX_HEIGHT = 6000
 TAF_HOURS = 12
+TICK_HOURS = 3
 
 WEIGHT_COLORS = {3: DANGER, 2: WARN, 1: ACCENT}
 
@@ -33,13 +34,24 @@ def empty_line(c: Canvas, y: float, text: str) -> float:
     return y + 30
 
 
-def _taf_strip(c: Canvas, x: float, y: float, w: float, taf: Taf | None, now: datetime) -> None:
-    """Hour-by-hour category for the next TAF_HOURS: prevailing on top, TEMPO/PROB beneath."""
+def _taf_strip(c: Canvas, x: float, y: float, w: float, taf: Taf | None, now: datetime, tz) -> None:
+    """Hour-by-hour category for the next TAF_HOURS: prevailing on top,
+    TEMPO/PROB beneath, and every TICK_HOURS the hour in local time over Zulu,
+    labelled the way the /taf card is."""
     if taf is None:
         c.text(x, y + 7, "No TAF", size=9.5, fill=FAINT, anchor="lm")
         return
     seg = w / TAF_HOURS
     start = now.replace(minute=0, second=0, microsecond=0)
+    for i in range(0, TAF_HOURS + 1, TICK_HOURS):
+        tick = start + timedelta(hours=i)
+        tx = x + i * seg
+        # The first and last labels sit inside the strip, not centred on its edges.
+        anchor = "la" if i == 0 else "ra" if i == TAF_HOURS else "ma"
+        c.line([(tx, y + 15), (tx, y + 18)], fill=BORDER)
+        c.text(tx, y + 19, tick.astimezone(tz).strftime("%-I%p").lower(), style="semibold", size=9,
+               fill=TEXT, anchor=anchor)
+        c.text(tx, y + 31, tick.strftime("%HZ"), size=8, fill=FAINT, anchor=anchor)
     for i in range(TAF_HOURS):
         when = start + timedelta(hours=i, minutes=30)
         base = taf.prevailing_at(when)
@@ -79,8 +91,8 @@ def airport_tile(c: Canvas, x: float, y: float, w: float, h: float, a: AirportBr
             c.text(x + w - 10, y + 38, "STALE", style="bold", size=9.5, fill=WARN, anchor="ra")
     else:
         c.text(x + 16, y + 40, "No current METAR", size=11.5, fill=MUTED)
-    c.text(x + 16, y + h - 13, f"TAF next {TAF_HOURS} h", size=8.5, fill=FAINT, anchor="lm")
-    _taf_strip(c, x + 92, y + h - 20, w - 92 - 12, a.taf, data.generated)
+    c.text(x + 16, y + h - 37, f"TAF next {TAF_HOURS} h", size=8.5, fill=FAINT, anchor="lm")
+    _taf_strip(c, x + 92, y + h - 44, w - 92 - 12, a.taf, data.generated, data.tz)
 
 
 def _until(when: datetime | None, tz) -> str:
@@ -175,7 +187,7 @@ def _draw(c: Canvas, data: BriefData, radius: int) -> float:
 
     # Airports, two per row.
     tile_w = (WIDTH - 2 * PAD - GAP) / 2
-    tile_h = 104
+    tile_h = 126
     for i, a in enumerate(data.airports):
         col, row = i % 2, i // 2
         airport_tile(c, PAD + col * (tile_w + GAP), y + row * (tile_h + GAP), tile_w, tile_h, a, data)
